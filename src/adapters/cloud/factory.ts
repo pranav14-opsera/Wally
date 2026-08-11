@@ -1,3 +1,5 @@
+import { S3Client } from '@aws-sdk/client-s3';
+
 // Relative import, not the @config alias — see the note in
 // src/logging/logger.ts for why cross-module imports in src/ use real
 // relative paths rather than tsconfig path aliases.
@@ -5,6 +7,7 @@ import { getConfig } from '../../config/index.js';
 import type { CloudProvider, ComputeRunner } from '../../config/schema.js';
 import { createLogger } from '../../logging/index.js';
 import { AdapterNotRegisteredError } from '../errors.js';
+import { S3StorageAdapter } from './aws/S3StorageAdapter.js';
 import type { ICloudComputeService, ICloudSecretsService, ICloudStorageService } from './interfaces/index.js';
 import { FilesystemStorageAdapter } from './local/FilesystemStorageAdapter.js';
 import { LocalComputeRunner } from './local/LocalComputeRunner.js';
@@ -44,6 +47,19 @@ cloudStorageRegistry.register(
   'local',
   () => new FilesystemStorageAdapter(getConfig().STORAGE_LOCAL_PATH, createLogger('FilesystemStorageAdapter')),
 );
+// Real implementation (WO-018) — S3Client uses the SDK's default
+// credential provider chain (IAM role / env vars / shared credentials
+// file); AWS_REGION/S3_BUCKET_NAME are validated as required by
+// envSchema whenever CLOUD_PROVIDER=aws, but re-checked here (same
+// pattern as prisma-client.ts's POSTGRES_* guard) rather than asserted,
+// since this closure's type only sees them as optional.
+cloudStorageRegistry.register('aws', () => {
+  const { AWS_REGION, S3_BUCKET_NAME } = getConfig();
+  if (!AWS_REGION || !S3_BUCKET_NAME) {
+    throw new Error('S3StorageAdapter requires AWS_REGION and S3_BUCKET_NAME to be set when CLOUD_PROVIDER=aws.');
+  }
+  return new S3StorageAdapter(new S3Client({ region: AWS_REGION }), S3_BUCKET_NAME, createLogger('S3StorageAdapter'));
+});
 
 export const cloudSecretsRegistry = new AdapterRegistry<ICloudSecretsService>('cloud secrets');
 // Real implementation (WO-016), not a stub — same local-first rationale as

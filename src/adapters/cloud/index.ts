@@ -29,6 +29,7 @@ export {
   createCloudSecretsAdapter,
   createCloudStorageAdapter,
 } from './factory.js';
+export { S3StorageAdapter } from './aws/S3StorageAdapter.js';
 export { FilesystemStorageAdapter } from './local/FilesystemStorageAdapter.js';
 export { LocalComputeRunner } from './local/LocalComputeRunner.js';
 export { LocalSecretsAdapter } from './local/LocalSecretsAdapter.js';

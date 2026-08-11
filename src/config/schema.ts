@@ -48,6 +48,12 @@ const baseEnvSchema = z.object({
   JWT_PUBLIC_KEY_PATH: z.string().min(1),
   LOCAL_SECRETS_MASTER_KEY: z.string().min(1).optional(),
 
+  // S3StorageAdapter (CLOUD_PROVIDER=aws). AWS credentials themselves are
+  // NOT a config field here — the SDK's default credential provider chain
+  // (IAM role / env vars / shared credentials file) resolves those.
+  S3_BUCKET_NAME: z.string().min(1).optional(),
+  AWS_REGION: z.string().min(1).optional(),
+
   LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
   NODE_ENV: z.string().default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -127,6 +133,11 @@ export const envSchema = baseEnvSchema.superRefine((env, ctx) => {
         message: `Must be at least ${LOCAL_SECRETS_MASTER_KEY_MIN_LENGTH} characters (AES-256 key material) when CLOUD_PROVIDER=local`,
       });
     }
+  }
+
+  if (env.CLOUD_PROVIDER === 'aws') {
+    requireField(ctx, env.S3_BUCKET_NAME, 'S3_BUCKET_NAME', 'Required when CLOUD_PROVIDER=aws');
+    requireField(ctx, env.AWS_REGION, 'AWS_REGION', 'Required when CLOUD_PROVIDER=aws');
   }
 });
 
