@@ -5,6 +5,7 @@ import {
   DuplicateKeyError,
   EntityNotFoundError,
   ForeignKeyViolationError,
+  TransactionError,
   ValidationError,
 } from '../errors.js';
 
@@ -69,6 +70,10 @@ export function mapPrismaError(error: unknown, context: PrismaErrorContext): Dat
         return new EntityNotFoundError(context.entityName, context.id ?? 'unknown');
       case 'P2003':
         return new ForeignKeyViolationError(context.entityName, formatForeignKeyField(meta));
+      case 'P2028':
+        return new TransactionError(
+          `Transaction error during ${context.operation} on ${context.entityName}: ${error.message}`,
+        );
       default:
         return new ValidationError(
           `Prisma error ${error.code} during ${context.operation} on ${context.entityName}: ${error.message}`,

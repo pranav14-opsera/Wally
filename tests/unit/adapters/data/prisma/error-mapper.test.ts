@@ -7,6 +7,7 @@ import {
   DuplicateKeyError,
   EntityNotFoundError,
   ForeignKeyViolationError,
+  TransactionError,
   ValidationError,
 } from '../../../../../src/adapters/data/errors.js';
 import { mapPrismaError } from '../../../../../src/adapters/data/prisma/error-mapper.js';
@@ -69,6 +70,12 @@ describe('mapPrismaError', () => {
     expect(error).toBeInstanceOf(ForeignKeyViolationError);
     expect(error.code).toBe('FOREIGN_KEY_VIOLATION');
     expect(error.message).toContain('user_id');
+  });
+
+  it('maps P2028 (transaction API error, including timeout) to TransactionError', () => {
+    const error = mapPrismaError(knownRequestError('P2028'), { entityName: 'AgentJob', operation: 'transaction' });
+    expect(error).toBeInstanceOf(TransactionError);
+    expect(error.code).toBe('TRANSACTION');
   });
 
   it('maps any P1xxx code to ConnectionError', () => {

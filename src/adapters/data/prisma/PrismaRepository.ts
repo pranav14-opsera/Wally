@@ -40,6 +40,16 @@ export interface PrismaModelDelegate<TModel> {
   delete(args: { where: { id: string } }): Promise<TModel>;
 }
 
+// Deliberately more generous than Prisma's own defaults (maxWait: 2s,
+// timeout: 5s) — appropriate for a job-orchestration platform where a
+// transaction may span several related writes, not just a single
+// statement. `IRepository.transaction<R>` (WO-007) takes no options
+// parameter, so these can't be made caller-configurable per the AC's
+// literal wording without a WO-007 interface change out of this WO's
+// scope; every call uses these same values.
+const TRANSACTION_MAX_WAIT_MS = 5_000;
+const TRANSACTION_TIMEOUT_MS = 15_000;
+
 /** Resolves this repository's model delegate off either the base client or a transaction client — same shape either way. */
 export type DelegateResolver<TModel> = (
   client: PrismaClient | Prisma.TransactionClient,
@@ -179,9 +189,12 @@ export class PrismaRepository<T extends BaseEntity> implements IRepository<T> {
     }
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        return this.transactionClient.run(tx, () => fn({ id: randomUUID() }));
-      });
+      return await this.prisma.$transaction(
+        async (tx) => {
+          return this.transactionClient.run(tx, () => fn({ id: randomUUID() }));
+        },
+        { maxWait: TRANSACTION_MAX_WAIT_MS, timeout: TRANSACTION_TIMEOUT_MS },
+      );
     } catch (error) {
       // Only normalize genuine Prisma/driver failures — an arbitrary
       // error `fn` threw to signal its own rollback (unrelated to
