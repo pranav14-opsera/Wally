@@ -15,6 +15,8 @@
     "test:unit": "vitest run --config vitest.config.unit.ts",
     "test:integration": "vitest run --config vitest.config.integration.ts",
     "test:contract": "bash scripts/run-contract-tests.sh",
+    "test:contract:postgres": "DATA_ENGINE=postgres vitest run --config vitest.config.contract.ts --reporter=json --outputFile=.contract-results-postgres.json",
+    "test:contract:mongo": "DATA_ENGINE=mongo vitest run --config vitest.config.contract.ts --reporter=json --outputFile=.contract-results-mongo.json",
     "test:e2e": "vitest run --config vitest.config.e2e.ts",
     "test:types": "tsc --noEmit -p tsconfig.typecheck.json",
     "test": "npm run test:unit && npm run test:integration && npm run test:contract && npm run test:e2e && npm run test:types",
