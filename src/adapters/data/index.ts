@@ -38,6 +38,11 @@ export type {
   TransactionContext,
 } from './types.js';
 export { createDataAdapter, dataAdapterRegistry, type RepositoryFactory } from './factory.js';
+export { MongooseAgentJobRepository } from './mongoose/MongooseAgentJobRepository.js';
+export { MongooseDriftEventRepository } from './mongoose/MongooseDriftEventRepository.js';
+export { MongooseEmbeddedArrayRepository } from './mongoose/MongooseEmbeddedArrayRepository.js';
+export { MongooseJobStepRepository } from './mongoose/MongooseJobStepRepository.js';
+export { MongooseRepository } from './mongoose/MongooseRepository.js';
 export { PrismaAgentJobRepository } from './prisma/PrismaAgentJobRepository.js';
 export {
   type DelegateResolver,
