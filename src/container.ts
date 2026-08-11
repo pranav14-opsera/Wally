@@ -1,7 +1,7 @@
 import type { Logger } from 'pino';
 
 import type { ICloudComputeService, ICloudSecretsService, ICloudStorageService } from './adapters/cloud/index.js';
-import type { IRepository } from './adapters/data/index.js';
+import type { BaseEntity, IRepository } from './adapters/data/index.js';
 import type { AppConfig } from './config/index.js';
 import type { IAuditLogger } from './logging/index.js';
 
@@ -18,5 +18,5 @@ export interface AppContainer {
   readonly cloudStorage: ICloudStorageService;
   readonly cloudSecrets: ICloudSecretsService;
   readonly cloudCompute: ICloudComputeService;
-  createRepository<T extends { id: string }>(entityName: string): IRepository<T>;
+  createRepository<T extends BaseEntity>(entityName: string): IRepository<T>;
 }

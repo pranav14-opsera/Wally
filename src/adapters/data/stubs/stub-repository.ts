@@ -1,97 +1,158 @@
 import { randomUUID } from 'node:crypto';
 
-import type { FilterQuery, IRepository, QueryOptions } from '../interfaces.js';
-import { DuplicateEntityError, EntityNotFoundError } from '../interfaces.js';
+import { DuplicateKeyError, EntityNotFoundError, TransactionError } from '../errors.js';
+import type { IRepository } from '../interfaces/IRepository.js';
+import type {
+  BaseEntity,
+  FilterCondition,
+  FilterOptions,
+  PaginatedResult,
+  PaginationOptions,
+  SortOptions,
+  TransactionContext,
+} from '../types.js';
 
-function matchesFilter<T extends { id: string }>(entity: T, filter: FilterQuery<T>): boolean {
-  return (Object.keys(filter) as Array<keyof T>).every((key) => entity[key] === filter[key]);
+function matchesCondition<TValue>(actual: TValue, condition: FilterCondition<TValue>): boolean {
+  switch (condition.operator) {
+    case 'eq':
+      return actual === condition.value;
+    case 'ne':
+      return actual !== condition.value;
+    case 'gt':
+      return actual !== null && actual !== undefined && actual > (condition.value as TValue);
+    case 'gte':
+      return actual !== null && actual !== undefined && actual >= (condition.value as TValue);
+    case 'lt':
+      return actual !== null && actual !== undefined && actual < (condition.value as TValue);
+    case 'lte':
+      return actual !== null && actual !== undefined && actual <= (condition.value as TValue);
+    case 'in':
+      return Array.isArray(condition.value) && condition.value.includes(actual);
+    case 'contains':
+      return typeof actual === 'string' && typeof condition.value === 'string'
+        ? actual.includes(condition.value)
+        : false;
+    case 'isNull':
+      return actual === null || actual === undefined;
+    default:
+      return false;
+  }
 }
 
-function applySort<T extends { id: string }>(
-  entities: T[],
-  sort: Record<string, 'asc' | 'desc'> | undefined,
-): T[] {
+function matchesFilter<T extends BaseEntity>(entity: T, filters: FilterOptions<T>): boolean {
+  return (Object.keys(filters) as Array<keyof T>).every((key) => {
+    const condition = filters[key];
+    if (!condition) {
+      return true;
+    }
+    return matchesCondition(entity[key], condition);
+  });
+}
+
+function applySort<T extends BaseEntity>(entities: T[], sort: SortOptions<T> | undefined): T[] {
   if (!sort) {
     return entities;
   }
 
-  const [field, direction] = Object.entries(sort)[0] ?? [];
-  if (!field) {
+  const sortEntries = Object.entries(sort) as Array<[keyof T, 'asc' | 'desc']>;
+  if (sortEntries.length === 0) {
     return entities;
   }
 
-  const sorted = [...entities].sort((a, b) => {
-    const aValue = a[field as keyof T];
-    const bValue = b[field as keyof T];
-    if (aValue === bValue) {
-      return 0;
+  return [...entities].sort((a, b) => {
+    for (const [field, direction] of sortEntries) {
+      const aValue = a[field];
+      const bValue = b[field];
+      if (aValue === bValue) {
+        continue;
+      }
+      const comparison = aValue < bValue ? -1 : 1;
+      return direction === 'desc' ? -comparison : comparison;
     }
-    return aValue < bValue ? -1 : 1;
+    return 0;
   });
-
-  return direction === 'desc' ? sorted.reverse() : sorted;
 }
 
-function applySelect<T extends { id: string }>(
+function applyPagination<T extends BaseEntity>(
   entities: T[],
-  select: string[] | undefined,
-): T[] {
-  if (!select || select.length === 0) {
-    return entities;
+  pagination: PaginationOptions | undefined,
+): { page: T[]; hasNext: boolean; nextCursor?: string } {
+  if (!pagination) {
+    return { page: entities, hasNext: false };
   }
 
-  return entities.map((entity) => {
-    const picked = {} as T;
-    for (const field of select) {
-      (picked as Record<string, unknown>)[field] = (entity as Record<string, unknown>)[field];
-    }
-    // `id` is always present so consumers can still identify the record.
-    (picked as Record<string, unknown>).id = entity.id;
-    return picked;
-  });
+  if (pagination.kind === 'offset') {
+    const page = entities.slice(pagination.offset, pagination.offset + pagination.limit);
+    const hasNext = pagination.offset + page.length < entities.length;
+    return { page, hasNext };
+  }
+
+  // cursor pagination: the cursor is the id of the last item seen.
+  const startIndex = pagination.cursor
+    ? entities.findIndex((entity) => entity.id === pagination.cursor) + 1
+    : 0;
+  const page = entities.slice(startIndex, startIndex + pagination.limit);
+  const hasNext = startIndex + page.length < entities.length;
+  const nextCursor = hasNext ? page[page.length - 1]?.id : undefined;
+  return { page, hasNext, nextCursor };
 }
 
 /** In-memory IRepository<T> for local development and testing. */
-export class StubRepository<T extends { id: string }> implements IRepository<T> {
+export class StubRepository<T extends BaseEntity> implements IRepository<T> {
   private readonly entities = new Map<string, T>();
+  private inTransaction = false;
 
   public constructor(private readonly entityName: string) {}
 
-  public async create(data: Partial<T>): Promise<T> {
-    const id = (data.id as string | undefined) ?? randomUUID();
+  public async create(data: Omit<T, 'id' | 'created_at' | 'updated_at'>): Promise<T> {
+    const providedId = (data as Partial<T>).id as string | undefined;
+    const id = providedId ?? randomUUID();
 
     if (this.entities.has(id)) {
-      throw new DuplicateEntityError(this.entityName, 'id');
+      throw new DuplicateKeyError(this.entityName, 'id');
     }
 
-    const entity = { ...data, id } as T;
+    const now = new Date();
+    const entity = { ...data, id, created_at: now, updated_at: now } as T;
     this.entities.set(id, entity);
     return entity;
+  }
+
+  public async createMany(data: Array<Omit<T, 'id' | 'created_at' | 'updated_at'>>): Promise<T[]> {
+    const created: T[] = [];
+    for (const item of data) {
+      created.push(await this.create(item));
+    }
+    return created;
   }
 
   public async findById(id: string): Promise<T | null> {
     return this.entities.get(id) ?? null;
   }
 
-  public async findMany(filter: FilterQuery<T>, options?: QueryOptions): Promise<T[]> {
-    let results = [...this.entities.values()].filter((entity) => matchesFilter(entity, filter));
+  public async findMany(
+    filters?: FilterOptions<T>,
+    sort?: SortOptions<T>,
+    pagination?: PaginationOptions,
+  ): Promise<PaginatedResult<T>> {
+    let results = [...this.entities.values()];
+    if (filters) {
+      results = results.filter((entity) => matchesFilter(entity, filters));
+    }
+    const total = results.length;
+    results = applySort(results, sort);
+    const { page, hasNext, nextCursor } = applyPagination(results, pagination);
 
-    results = applySort(results, options?.sort);
-
-    const offset = options?.offset ?? 0;
-    const limit = options?.limit;
-    results = limit === undefined ? results.slice(offset) : results.slice(offset, offset + limit);
-
-    return applySelect(results, options?.select);
+    return { items: page, total, hasNext, ...(nextCursor ? { nextCursor } : {}) };
   }
 
-  public async update(id: string, data: Partial<T>): Promise<T> {
+  public async update(id: string, data: Partial<Omit<T, 'id' | 'created_at' | 'updated_at'>>): Promise<T> {
     const existing = this.entities.get(id);
     if (!existing) {
       throw new EntityNotFoundError(this.entityName, id);
     }
 
-    const updated = { ...existing, ...data, id } as T;
+    const updated = { ...existing, ...data, id, updated_at: new Date() } as T;
     this.entities.set(id, updated);
     return updated;
   }
@@ -103,10 +164,25 @@ export class StubRepository<T extends { id: string }> implements IRepository<T> 
     this.entities.delete(id);
   }
 
-  public async count(filter?: FilterQuery<T>): Promise<number> {
-    if (!filter) {
+  public async count(filters?: FilterOptions<T>): Promise<number> {
+    if (!filters) {
       return this.entities.size;
     }
-    return [...this.entities.values()].filter((entity) => matchesFilter(entity, filter)).length;
+    return [...this.entities.values()].filter((entity) => matchesFilter(entity, filters)).length;
+  }
+
+  public async transaction<R>(fn: (ctx: TransactionContext) => Promise<R>): Promise<R> {
+    if (this.inTransaction) {
+      throw new TransactionError(
+        `Nested transaction attempted on ${this.entityName} repository — this stub (and the real Prisma/Mongoose adapters) do not support nested transactions.`,
+      );
+    }
+
+    this.inTransaction = true;
+    try {
+      return await fn({ id: randomUUID() });
+    } finally {
+      this.inTransaction = false;
+    }
   }
 }

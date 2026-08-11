@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { BaseEntity } from '../../../src/adapters/data/index.js';
+
 const VALID_ENV = {
   NODE_ENV: 'test',
   CLOUD_PROVIDER: 'local',
@@ -38,7 +40,7 @@ describe('bootstrap', () => {
     expect(container.cloudCompute).toBeDefined();
     expect(typeof container.createRepository).toBe('function');
 
-    const repo = container.createRepository<{ id: string; name: string }>('TestEntity');
+    const repo = container.createRepository<BaseEntity & { name: string }>('TestEntity');
     const created = await repo.create({ name: 'sample' });
     expect(created.name).toBe('sample');
   });
