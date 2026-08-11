@@ -1,0 +1,8 @@
+{"type":"Metric","data":{"name":"http_req_duration","type":"trend","contains":"time"},"metric":"http_req_duration"}
+this is not valid json at all
+{"type":"Point","data":{"time":"2026-01-01T00:00:00.000Z","value":123.45,"tags":{"method":"GET"}},"metric":"http_req_duration"}
+{"type":"UnknownType","data":{}}
+{"missing":"type and data fields"}
+{"type":"Point","data":"not-an-object"}
+
+{"type":"Point","data":{"time":"2026-01-01T00:00:00.200Z","value":55.1,"tags":{}},"metric":"http_req_duration"}

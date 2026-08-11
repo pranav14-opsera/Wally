@@ -5,4 +5,10 @@ export interface ICloudComputeService {
   runTask(config: ComputeTaskConfig): Promise<string>;
   getTaskStatus(taskId: string): Promise<ComputeTaskStatus>;
   stopTask(taskId: string): Promise<void>;
+  /**
+   * Optional one-time startup hook (e.g. LocalComputeRunner's k6-binary
+   * availability check). Not every implementation needs it —
+   * bootstrap.ts calls it via `cloudCompute.init?.()`.
+   */
+  init?(): Promise<void>;
 }

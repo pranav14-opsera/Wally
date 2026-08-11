@@ -12,8 +12,8 @@ import {
   createCloudSecretsAdapter,
   createCloudStorageAdapter,
   FilesystemStorageAdapter,
+  LocalComputeRunner,
   LocalSecretsAdapter,
-  StubComputeAdapter,
   StubStorageAdapter,
 } from '../../../src/adapters/cloud/index.js';
 import { createDataAdapter, StubRepository } from '../../../src/adapters/data/index.js';
@@ -65,8 +65,8 @@ describe('cloud adapter factories', () => {
     expect(createCloudSecretsAdapter('local')).toBeInstanceOf(LocalSecretsAdapter);
   });
 
-  it("createCloudComputeAdapter('local') returns a StubComputeAdapter", () => {
-    expect(createCloudComputeAdapter('local')).toBeInstanceOf(StubComputeAdapter);
+  it("createCloudComputeAdapter('local') returns a LocalComputeRunner", () => {
+    expect(createCloudComputeAdapter('local')).toBeInstanceOf(LocalComputeRunner);
   });
 
   it('throws AdapterNotRegisteredError with the requested value and available list for an unregistered provider', () => {

@@ -1,0 +1,5 @@
+{"type":"Metric","data":{"name":"http_req_duration","type":"trend","contains":"time"},"metric":"http_req_duration"}
+{"type":"Metric","data":{"name":"http_reqs","type":"counter","contains":"default"},"metric":"http_reqs"}
+{"type":"Point","data":{"time":"2026-01-01T00:00:00.000Z","value":123.45,"tags":{"method":"GET","status":"200"}},"metric":"http_req_duration"}
+{"type":"Point","data":{"time":"2026-01-01T00:00:00.100Z","value":1,"tags":{"method":"GET","status":"200"}},"metric":"http_reqs"}
+{"type":"Point","data":{"time":"2026-01-01T00:00:00.200Z","value":98.7,"tags":{"method":"GET","status":"200"}},"metric":"http_req_duration"}

@@ -64,7 +64,15 @@ export type CloudErrorCode =
   | 'SECRET_NOT_FOUND'
   | 'MASTER_KEY_MISSING'
   | 'CORRUPTION_DETECTED'
-  | 'LOCK_TIMEOUT';
+  | 'LOCK_TIMEOUT'
+  // Compute-adapter-specific codes (WO-017) — same rationale: a caller
+  // needs to distinguish "the k6 binary itself is missing" from
+  // "this task ID doesn't exist" from "the task's process failed/timed
+  // out", not lump them all under NOT_FOUND/PROVIDER_ERROR.
+  | 'K6_NOT_FOUND'
+  | 'TASK_NOT_FOUND'
+  | 'TASK_TIMEOUT'
+  | 'TASK_FAILED';
 
 interface CloudAdapterErrorJSON {
   name: string;
