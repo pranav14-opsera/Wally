@@ -3,7 +3,11 @@ import { z } from 'zod';
 const CLOUD_PROVIDERS = ['aws', 'gcp', 'azure', 'local'] as const;
 const DATA_ENGINES = ['postgres', 'mongo'] as const;
 const COMPUTE_RUNNERS = ['local', 'cloud'] as const;
-const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as const;
+// Includes 'silent' (a valid Pino level, not just the 6 severity levels)
+// so LOG_LEVEL=silent can fully disable log output — required by WO-004's
+// logging module edge case; added here since AppConfig.LOG_LEVEL is its
+// source of truth.
+const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'] as const;
 
 const LOCAL_SECRETS_MASTER_KEY_MIN_LENGTH = 32;
 
