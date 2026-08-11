@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  ComputeTaskNotFoundError,
-  SecretNotFoundError,
-  StorageObjectNotFoundError,
+  ComputeError,
+  SecretsError,
+  StorageError,
   StubComputeAdapter,
   StubSecretsAdapter,
   StubStorageAdapter,
@@ -17,17 +17,31 @@ import {
 import type { BaseEntity } from '../../../src/adapters/data/index.js';
 
 describe('StubStorageAdapter', () => {
-  it('round-trips upload/download', async () => {
+  it('round-trips upload/download, including metadata and contentType', async () => {
     const adapter = new StubStorageAdapter();
-    await adapter.upload('key-1', Buffer.from('hello'));
+    await adapter.upload('key-1', Buffer.from('hello'), {
+      metadata: { author: 'wally' },
+      contentType: 'text/plain',
+    });
 
     const result = await adapter.download('key-1');
-    expect(result.toString()).toBe('hello');
+    expect(result.data.toString()).toBe('hello');
+    expect(result.metadata).toEqual({ author: 'wally' });
+    expect(result.contentType).toBe('text/plain');
   });
 
-  it('throws StorageObjectNotFoundError when downloading a missing key', async () => {
+  it('throws StorageError with code NOT_FOUND when downloading a missing key', async () => {
     const adapter = new StubStorageAdapter();
-    await expect(adapter.download('missing')).rejects.toThrow(StorageObjectNotFoundError);
+    await expect(adapter.download('missing')).rejects.toThrow(StorageError);
+
+    try {
+      await adapter.download('missing');
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(StorageError);
+      expect((error as StorageError).code).toBe('NOT_FOUND');
+      expect((error as StorageError).key).toBe('missing');
+    }
   });
 
   it('list filters by prefix and exists/delete work correctly', async () => {
@@ -42,45 +56,60 @@ describe('StubStorageAdapter', () => {
     await adapter.delete('reports/a.json');
     expect(await adapter.exists('reports/a.json')).toBe(false);
   });
+
+  it('list with no prefix returns every key', async () => {
+    const adapter = new StubStorageAdapter();
+    await adapter.upload('a.json', Buffer.from('a'));
+    await adapter.upload('b.json', Buffer.from('b'));
+
+    expect(await adapter.list()).toEqual(['a.json', 'b.json']);
+  });
 });
 
 describe('StubSecretsAdapter', () => {
-  it('round-trips putSecret/getSecret', async () => {
+  it('round-trips putSecret/getSecret and returns SecretMetadata', async () => {
     const adapter = new StubSecretsAdapter();
-    await adapter.putSecret('db-password', 's3cr3t');
+    const metadata = await adapter.putSecret('db-password', 's3cr3t');
 
     expect(await adapter.getSecret('db-password')).toBe('s3cr3t');
+    expect(metadata.version).toBeTruthy();
+    expect(metadata.createdAt).toBeInstanceOf(Date);
+    expect(metadata.rotatedAt).toBeUndefined();
   });
 
-  it('throws SecretNotFoundError when getting a missing secret', async () => {
+  it('throws SecretsError with code NOT_FOUND when getting a missing secret', async () => {
     const adapter = new StubSecretsAdapter();
-    await expect(adapter.getSecret('missing')).rejects.toThrow(SecretNotFoundError);
+    await expect(adapter.getSecret('missing')).rejects.toThrow(SecretsError);
   });
 
-  it('rotateSecret throws for a non-existent key and updates an existing one', async () => {
+  it('rotateSecret throws for a non-existent key and updates an existing one with rotatedAt set', async () => {
     const adapter = new StubSecretsAdapter();
-    await expect(adapter.rotateSecret('missing', 'new-value')).rejects.toThrow(
-      SecretNotFoundError,
-    );
+    await expect(adapter.rotateSecret('missing', 'new-value')).rejects.toThrow(SecretsError);
 
     await adapter.putSecret('api-key', 'old-value');
-    await adapter.rotateSecret('api-key', 'new-value');
+    const rotated = await adapter.rotateSecret('api-key', 'new-value');
     expect(await adapter.getSecret('api-key')).toBe('new-value');
+    expect(rotated.rotatedAt).toBeInstanceOf(Date);
   });
 
-  it('listSecrets returns all stored keys', async () => {
+  it('SecretsError never carries the secret value, only its name', async () => {
     const adapter = new StubSecretsAdapter();
-    await adapter.putSecret('a', '1');
-    await adapter.putSecret('b', '2');
-
-    expect(await adapter.listSecrets()).toEqual(['a', 'b']);
+    try {
+      await adapter.getSecret('missing-secret');
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(SecretsError);
+      const secretsError = error as SecretsError;
+      expect(secretsError.secretName).toBe('missing-secret');
+      expect(JSON.stringify(secretsError.toJSON())).not.toContain('value');
+    }
   });
 });
 
 describe('StubComputeAdapter', () => {
   it('simulates the pending -> running -> completed lifecycle', async () => {
     const adapter = new StubComputeAdapter();
-    const taskId = await adapter.runTask({ taskType: 'k6', command: 'k6 run script.js' });
+    const taskId = await adapter.runTask({ command: 'k6 run script.js' });
 
     expect((await adapter.getTaskStatus(taskId)).state).toBe('running');
     const completed = await adapter.getTaskStatus(taskId);
@@ -88,18 +117,29 @@ describe('StubComputeAdapter', () => {
     expect(completed.exitCode).toBe(0);
   });
 
-  it('throws ComputeTaskNotFoundError for an unknown task ID', async () => {
+  it('throws ComputeError with code NOT_FOUND for an unknown task ID', async () => {
     const adapter = new StubComputeAdapter();
-    await expect(adapter.getTaskStatus('unknown')).rejects.toThrow(ComputeTaskNotFoundError);
-    await expect(adapter.stopTask('unknown')).rejects.toThrow(ComputeTaskNotFoundError);
+    await expect(adapter.getTaskStatus('unknown')).rejects.toThrow(ComputeError);
+    await expect(adapter.stopTask('unknown')).rejects.toThrow(ComputeError);
   });
 
   it('stopTask transitions a pending/running task to stopped', async () => {
     const adapter = new StubComputeAdapter();
-    const taskId = await adapter.runTask({ taskType: 'k6', command: 'k6 run script.js' });
+    const taskId = await adapter.runTask({ command: 'k6 run script.js' });
 
     await adapter.stopTask(taskId);
     expect((await adapter.getTaskStatus(taskId)).state).toBe('stopped');
+  });
+
+  it('rejects a zero or negative timeout with a typed ComputeError', async () => {
+    const adapter = new StubComputeAdapter();
+
+    await expect(adapter.runTask({ command: 'k6 run script.js', timeout: 0 })).rejects.toThrow(
+      ComputeError,
+    );
+    await expect(adapter.runTask({ command: 'k6 run script.js', timeout: -100 })).rejects.toThrow(
+      ComputeError,
+    );
   });
 });
 

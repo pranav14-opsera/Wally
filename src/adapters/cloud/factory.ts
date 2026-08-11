@@ -3,7 +3,7 @@
 // relative paths rather than tsconfig path aliases.
 import type { CloudProvider, ComputeRunner } from '../../config/schema.js';
 import { AdapterNotRegisteredError } from '../errors.js';
-import type { ICloudComputeService, ICloudSecretsService, ICloudStorageService } from './interfaces.js';
+import type { ICloudComputeService, ICloudSecretsService, ICloudStorageService } from './interfaces/index.js';
 import { StubComputeAdapter } from './stubs/stub-compute-adapter.js';
 import { StubSecretsAdapter } from './stubs/stub-secrets-adapter.js';
 import { StubStorageAdapter } from './stubs/stub-storage-adapter.js';

@@ -1,12 +1,25 @@
 export type {
+  CloudErrorCode,
+  CloudProvider,
+  ComputeRunner,
   ComputeTaskConfig,
+  ComputeTaskResult,
   ComputeTaskState,
   ComputeTaskStatus,
   ICloudComputeService,
   ICloudSecretsService,
   ICloudStorageService,
-} from './interfaces.js';
-export { ComputeTaskNotFoundError, SecretNotFoundError, StorageObjectNotFoundError } from './interfaces.js';
+  SecretMetadata,
+  StorageDownloadResult,
+  StorageUploadOptions,
+} from './interfaces/index.js';
+export {
+  CloudAdapterError,
+  ComputeError,
+  ProviderNotImplementedError,
+  SecretsError,
+  StorageError,
+} from './interfaces/index.js';
 export {
   AdapterRegistry,
   cloudComputeRegistry,
