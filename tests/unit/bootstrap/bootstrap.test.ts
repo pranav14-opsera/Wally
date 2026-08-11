@@ -1,6 +1,17 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BaseEntity } from '../../../src/adapters/data/index.js';
+
+// bootstrap() constructs a real FilesystemStorageAdapter (not a stub) for
+// CLOUD_PROVIDER=local, which touches disk in its constructor — point it
+// at an isolated temp directory so these tests don't create ./data/storage
+// inside the repo, and clean it up afterward.
+const TEST_STORAGE_PATH = join(tmpdir(), `wally-bootstrap-test-${randomUUID()}`);
 
 const VALID_ENV = {
   NODE_ENV: 'test',
@@ -17,10 +28,15 @@ const VALID_ENV = {
   JWT_PUBLIC_KEY_PATH: './secrets/jwt-public.pem',
   LOCAL_SECRETS_MASTER_KEY: 'a'.repeat(32),
   LOG_LEVEL: 'silent',
+  STORAGE_LOCAL_PATH: TEST_STORAGE_PATH,
 };
 
 describe('bootstrap', () => {
   const ORIGINAL_ENV = process.env;
+
+  afterAll(async () => {
+    await rm(TEST_STORAGE_PATH, { recursive: true, force: true });
+  });
 
   beforeEach(() => {
     vi.resetModules();

@@ -1,4 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   AdapterRegistry,
@@ -6,6 +11,7 @@ import {
   createCloudComputeAdapter,
   createCloudSecretsAdapter,
   createCloudStorageAdapter,
+  FilesystemStorageAdapter,
   StubComputeAdapter,
   StubSecretsAdapter,
   StubStorageAdapter,
@@ -15,8 +21,41 @@ import type { BaseEntity } from '../../../src/adapters/data/index.js';
 import { AdapterNotRegisteredError } from '../../../src/adapters/errors.js';
 
 describe('cloud adapter factories', () => {
-  it("createCloudStorageAdapter('local') returns a StubStorageAdapter", () => {
-    expect(createCloudStorageAdapter('local')).toBeInstanceOf(StubStorageAdapter);
+  // createCloudStorageAdapter('local') now resolves the real
+  // FilesystemStorageAdapter (WO-015), which calls getConfig() lazily —
+  // populate process.env with a valid config, pointed at an isolated temp
+  // directory, before that test runs.
+  const ORIGINAL_ENV = process.env;
+  const TEST_STORAGE_PATH = join(tmpdir(), `wally-factory-test-${randomUUID()}`);
+
+  beforeAll(() => {
+    process.env = {
+      ...ORIGINAL_ENV,
+      NODE_ENV: 'test',
+      CLOUD_PROVIDER: 'local',
+      DATA_ENGINE: 'postgres',
+      COMPUTE_RUNNER: 'local',
+      POSTGRES_DB: 'wally_test',
+      POSTGRES_USER: 'wally',
+      POSTGRES_PASSWORD: 'test-password',
+      POSTGRES_HOST: 'localhost',
+      POSTGRES_PORT: '5432',
+      REDIS_URL: 'redis://localhost:6379',
+      JWT_PRIVATE_KEY_PATH: './secrets/jwt-private.pem',
+      JWT_PUBLIC_KEY_PATH: './secrets/jwt-public.pem',
+      LOCAL_SECRETS_MASTER_KEY: 'a'.repeat(32),
+      LOG_LEVEL: 'silent',
+      STORAGE_LOCAL_PATH: TEST_STORAGE_PATH,
+    };
+  });
+
+  afterAll(async () => {
+    process.env = ORIGINAL_ENV;
+    await rm(TEST_STORAGE_PATH, { recursive: true, force: true });
+  });
+
+  it("createCloudStorageAdapter('local') returns a FilesystemStorageAdapter", () => {
+    expect(createCloudStorageAdapter('local')).toBeInstanceOf(FilesystemStorageAdapter);
   });
 
   it("createCloudSecretsAdapter('local') returns a StubSecretsAdapter", () => {

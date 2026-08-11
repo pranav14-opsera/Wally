@@ -39,6 +39,11 @@ const baseEnvSchema = z.object({
   LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
   NODE_ENV: z.string().default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
+
+  // Base directory for FilesystemStorageAdapter (CLOUD_PROVIDER=local).
+  // Only meaningful for the local provider, so it has a default rather
+  // than a conditional-required check like LOCAL_SECRETS_MASTER_KEY.
+  STORAGE_LOCAL_PATH: z.string().min(1).default('./data/storage'),
 });
 
 function requireField(
