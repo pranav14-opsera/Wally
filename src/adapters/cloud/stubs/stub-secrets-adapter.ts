@@ -1,34 +1,47 @@
-import type { ICloudSecretsService } from '../interfaces.js';
-import { SecretNotFoundError } from '../interfaces.js';
+import { randomUUID } from 'node:crypto';
+
+import type { ICloudSecretsService, SecretMetadata } from '../interfaces/index.js';
+import { SecretsError } from '../interfaces/index.js';
+
+interface StoredSecret {
+  value: string;
+  metadata: SecretMetadata;
+}
 
 /** In-memory ICloudSecretsService for local development and testing. */
 export class StubSecretsAdapter implements ICloudSecretsService {
-  private readonly secrets = new Map<string, string>();
+  private readonly secrets = new Map<string, StoredSecret>();
 
-  public async getSecret(key: string): Promise<string> {
-    const value = this.secrets.get(key);
-    if (value === undefined) {
-      throw new SecretNotFoundError(key);
+  public async getSecret(name: string): Promise<string> {
+    const secret = this.secrets.get(name);
+    if (!secret) {
+      throw new SecretsError(`Secret not found: ${name}`, 'NOT_FOUND', 'local', 'getSecret', name);
     }
-    return value;
+    return secret.value;
   }
 
-  public async putSecret(key: string, value: string): Promise<void> {
-    this.secrets.set(key, value);
+  public async putSecret(name: string, value: string): Promise<SecretMetadata> {
+    const metadata: SecretMetadata = { version: randomUUID(), createdAt: new Date() };
+    this.secrets.set(name, { value, metadata });
+    return metadata;
   }
 
-  public async rotateSecret(key: string, newValue: string): Promise<void> {
-    if (!this.secrets.has(key)) {
-      throw new SecretNotFoundError(key);
+  public async rotateSecret(name: string, newValue: string): Promise<SecretMetadata> {
+    const existing = this.secrets.get(name);
+    if (!existing) {
+      throw new SecretsError(`Secret not found: ${name}`, 'NOT_FOUND', 'local', 'rotateSecret', name);
     }
-    this.secrets.set(key, newValue);
+
+    const metadata: SecretMetadata = {
+      version: randomUUID(),
+      createdAt: existing.metadata.createdAt,
+      rotatedAt: new Date(),
+    };
+    this.secrets.set(name, { value: newValue, metadata });
+    return metadata;
   }
 
-  public async deleteSecret(key: string): Promise<void> {
-    this.secrets.delete(key);
-  }
-
-  public async listSecrets(): Promise<string[]> {
-    return [...this.secrets.keys()];
+  public async deleteSecret(name: string): Promise<void> {
+    this.secrets.delete(name);
   }
 }
