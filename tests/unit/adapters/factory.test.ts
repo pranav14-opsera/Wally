@@ -14,6 +14,7 @@ import {
   FilesystemStorageAdapter,
   LocalComputeRunner,
   LocalSecretsAdapter,
+  S3StorageAdapter,
   StubStorageAdapter,
 } from '../../../src/adapters/cloud/index.js';
 import { createDataAdapter, StubRepository } from '../../../src/adapters/data/index.js';
@@ -48,6 +49,8 @@ describe('cloud adapter factories', () => {
       LOG_LEVEL: 'silent',
       STORAGE_LOCAL_PATH: TEST_STORAGE_PATH,
       SECRETS_LOCAL_PATH: TEST_SECRETS_PATH,
+      S3_BUCKET_NAME: 'wally-factory-test-bucket',
+      AWS_REGION: 'us-east-1',
     };
   });
 
@@ -69,16 +72,20 @@ describe('cloud adapter factories', () => {
     expect(createCloudComputeAdapter('local')).toBeInstanceOf(LocalComputeRunner);
   });
 
+  it("createCloudStorageAdapter('aws') returns an S3StorageAdapter", () => {
+    expect(createCloudStorageAdapter('aws')).toBeInstanceOf(S3StorageAdapter);
+  });
+
   it('throws AdapterNotRegisteredError with the requested value and available list for an unregistered provider', () => {
     let thrown: Error | undefined;
     try {
-      createCloudStorageAdapter('aws');
+      createCloudStorageAdapter('gcp');
     } catch (error) {
       thrown = error as Error;
     }
 
     expect(thrown).toBeInstanceOf(AdapterNotRegisteredError);
-    expect(thrown?.message).toContain('aws');
+    expect(thrown?.message).toContain('gcp');
     expect(thrown?.message).toContain('local');
   });
 });

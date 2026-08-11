@@ -106,17 +106,31 @@ describe('bootstrap', () => {
   });
 
   it('fails with adapter-registration context when config selects a valid but unregistered provider', async () => {
-    // CLOUD_PROVIDER=aws passes config validation (it's a valid enum value)
-    // but has no registered cloud storage adapter yet — this is the
-    // "partial initialization failure" edge case: cloudStorage is the
-    // first adapter bootstrap resolves, so it must fail there specifically.
+    // CLOUD_PROVIDER=gcp passes config validation (it's a valid enum
+    // value) but has no registered cloud storage adapter yet (only
+    // local/aws are registered as of WO-018) — this is the "partial
+    // initialization failure" edge case: cloudStorage is the first
+    // adapter bootstrap resolves, so it must fail there specifically.
+    process.env = {
+      ...ORIGINAL_ENV,
+      ...VALID_ENV,
+      CLOUD_PROVIDER: 'gcp',
+    };
+    const { bootstrap } = await import('../../../src/bootstrap.js');
+
+    await expect(bootstrap()).rejects.toThrow(/No cloud storage adapter registered for "gcp"/);
+  });
+
+  it('with CLOUD_PROVIDER=aws, cloudStorage resolves (S3StorageAdapter) but bootstrap still fails at the next unregistered step (cloudSecrets — AWS support lands in WO-019)', async () => {
     process.env = {
       ...ORIGINAL_ENV,
       ...VALID_ENV,
       CLOUD_PROVIDER: 'aws',
+      S3_BUCKET_NAME: 'wally-bootstrap-test-bucket',
+      AWS_REGION: 'us-east-1',
     };
     const { bootstrap } = await import('../../../src/bootstrap.js');
 
-    await expect(bootstrap()).rejects.toThrow(/No cloud storage adapter registered for "aws"/);
+    await expect(bootstrap()).rejects.toThrow(/No cloud secrets adapter registered for "aws"/);
   });
 });

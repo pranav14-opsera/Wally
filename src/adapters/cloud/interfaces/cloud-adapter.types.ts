@@ -72,7 +72,18 @@ export type CloudErrorCode =
   | 'K6_NOT_FOUND'
   | 'TASK_NOT_FOUND'
   | 'TASK_TIMEOUT'
-  | 'TASK_FAILED';
+  | 'TASK_FAILED'
+  // S3-adapter-specific codes (WO-018). Deliberately NOT adding a
+  // separate "key not found" code here — S3StorageAdapter reuses the
+  // existing NOT_FOUND (missing object) and PERMISSION_DENIED (access
+  // denied) that FilesystemStorageAdapter already uses for the identical
+  // ICloudStorageService scenarios, since both adapters are meant to be
+  // conformance-tested as behaviorally interchangeable (WO-022). These
+  // two are genuinely new failure modes with no local-filesystem
+  // equivalent (a missing S3 bucket or a network timeout don't happen
+  // when writing to disk), so they don't collide with that parity goal.
+  | 'CONFIGURATION_ERROR'
+  | 'NETWORK_ERROR';
 
 interface CloudAdapterErrorJSON {
   name: string;
