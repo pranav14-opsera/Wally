@@ -4,7 +4,8 @@ export type DataErrorCode =
   | 'DUPLICATE_KEY'
   | 'VALIDATION'
   | 'TRANSACTION'
-  | 'CONNECTION';
+  | 'CONNECTION'
+  | 'FOREIGN_KEY_VIOLATION';
 
 /**
  * Base class for every error an `IRepository<T>` implementation throws.
@@ -59,5 +60,19 @@ export class ConnectionError extends DataAdapterError {
   public constructor(message: string) {
     super(message, 'CONNECTION');
     this.name = 'ConnectionError';
+  }
+}
+
+/**
+ * Thrown by create/update when the write references another entity
+ * (a foreign key) that does not exist — distinct from `EntityNotFoundError`,
+ * which is about the entity the caller is directly operating on, not one
+ * it merely references. Added for WO-009: Postgres/Prisma's FK constraint
+ * violations (P2003) don't map cleanly onto any of the pre-existing codes.
+ */
+export class ForeignKeyViolationError extends DataAdapterError {
+  public constructor(entityName: string, referencedField: string) {
+    super(`${entityName} references a non-existent ${referencedField}`, 'FOREIGN_KEY_VIOLATION');
+    this.name = 'ForeignKeyViolationError';
   }
 }
