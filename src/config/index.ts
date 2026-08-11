@@ -1,7 +1,7 @@
 import { loadConfig } from './loader.js';
 import type { AppConfig } from './schema.js';
 
-export type { AppConfig } from './schema.js';
+export type { AppConfig, CloudProvider, ComputeRunner, DataEngine } from './schema.js';
 export { envSchema } from './schema.js';
 export { loadConfig } from './loader.js';
 

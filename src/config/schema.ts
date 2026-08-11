@@ -94,3 +94,11 @@ export const envSchema = baseEnvSchema.superRefine((env, ctx) => {
 });
 
 export type AppConfig = z.infer<typeof envSchema>;
+
+// Convenience aliases so adapter factories (src/adapters/**) can reference
+// these provider/engine types by name without depending on AppConfig's
+// full shape — CLOUD_PROVIDERS/DATA_ENGINES/COMPUTE_RUNNERS above remain
+// the single source of truth for the allowed values.
+export type CloudProvider = AppConfig['CLOUD_PROVIDER'];
+export type DataEngine = AppConfig['DATA_ENGINE'];
+export type ComputeRunner = AppConfig['COMPUTE_RUNNER'];
