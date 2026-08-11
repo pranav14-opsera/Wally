@@ -12,6 +12,7 @@ import type { BaseEntity } from '../../../src/adapters/data/index.js';
 // at an isolated temp directory so these tests don't create ./data/storage
 // inside the repo, and clean it up afterward.
 const TEST_STORAGE_PATH = join(tmpdir(), `wally-bootstrap-test-${randomUUID()}`);
+const TEST_SECRETS_PATH = join(tmpdir(), `wally-bootstrap-test-secrets-${randomUUID()}.enc`);
 
 const VALID_ENV = {
   NODE_ENV: 'test',
@@ -29,6 +30,7 @@ const VALID_ENV = {
   LOCAL_SECRETS_MASTER_KEY: 'a'.repeat(32),
   LOG_LEVEL: 'silent',
   STORAGE_LOCAL_PATH: TEST_STORAGE_PATH,
+  SECRETS_LOCAL_PATH: TEST_SECRETS_PATH,
 };
 
 describe('bootstrap', () => {
@@ -36,6 +38,7 @@ describe('bootstrap', () => {
 
   afterAll(async () => {
     await rm(TEST_STORAGE_PATH, { recursive: true, force: true });
+    await rm(TEST_SECRETS_PATH, { force: true });
   });
 
   beforeEach(() => {

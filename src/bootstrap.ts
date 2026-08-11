@@ -26,6 +26,14 @@ async function doBootstrap(): Promise<Readonly<AppContainer>> {
   const cloudSecrets = initStep(logger, 'cloudSecrets', config.CLOUD_PROVIDER, () =>
     createCloudSecretsAdapter(config.CLOUD_PROVIDER),
   );
+  if (cloudSecrets.init) {
+    try {
+      await cloudSecrets.init();
+    } catch (error) {
+      logger.error({ step: 'cloudSecrets.init', configValue: config.CLOUD_PROVIDER, err: error }, 'Bootstrap failed at step: cloudSecrets.init');
+      throw error;
+    }
+  }
   const cloudCompute = initStep(logger, 'cloudCompute', config.COMPUTE_RUNNER, () =>
     createCloudComputeAdapter(config.COMPUTE_RUNNER),
   );
