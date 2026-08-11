@@ -12,3 +12,7 @@ secrets/
 .forge/hook-version
 .forge/changed-files.log
 .claude/hooks/
+*-report.json
+*-stderr.txt
+precommit-scan-*.md
+npm-audit.json
