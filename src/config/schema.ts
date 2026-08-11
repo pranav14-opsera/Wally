@@ -45,6 +45,12 @@ const baseEnvSchema = z.object({
   // than a conditional-required check like LOCAL_SECRETS_MASTER_KEY.
   STORAGE_LOCAL_PATH: z.string().min(1).default('./data/storage'),
 
+  // Encrypted secrets file for LocalSecretsAdapter (CLOUD_PROVIDER=local).
+  // Same default-rather-than-required rationale as STORAGE_LOCAL_PATH —
+  // LOCAL_SECRETS_MASTER_KEY (not this path) is what's conditionally
+  // required when CLOUD_PROVIDER=local.
+  SECRETS_LOCAL_PATH: z.string().min(1).default('./data/secrets.enc'),
+
   // How long audit log entries are retained. Drives the Mongoose
   // AuditLog schema's TTL index (expireAfterSeconds); Postgres has no
   // native equivalent and instead relies on a scheduled purge job (a

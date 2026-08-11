@@ -56,7 +56,15 @@ export type CloudErrorCode =
   | 'NOT_IMPLEMENTED'
   | 'PROVIDER_ERROR'
   | 'PERMISSION_DENIED'
-  | 'STORAGE_FULL';
+  | 'STORAGE_FULL'
+  // Secrets-adapter-specific codes (WO-016) — distinct from the generic
+  // NOT_FOUND/PROVIDER_ERROR above because callers need to distinguish
+  // "this secret doesn't exist" from "the store itself is unusable"
+  // (wrong/missing master key, tampered file, lock contention).
+  | 'SECRET_NOT_FOUND'
+  | 'MASTER_KEY_MISSING'
+  | 'CORRUPTION_DETECTED'
+  | 'LOCK_TIMEOUT';
 
 interface CloudAdapterErrorJSON {
   name: string;

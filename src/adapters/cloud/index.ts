@@ -30,6 +30,7 @@ export {
   createCloudStorageAdapter,
 } from './factory.js';
 export { FilesystemStorageAdapter } from './local/FilesystemStorageAdapter.js';
+export { LocalSecretsAdapter } from './local/LocalSecretsAdapter.js';
 export { StubComputeAdapter } from './stubs/stub-compute-adapter.js';
 export { StubSecretsAdapter } from './stubs/stub-secrets-adapter.js';
 export { StubStorageAdapter } from './stubs/stub-storage-adapter.js';

@@ -12,8 +12,8 @@ import {
   createCloudSecretsAdapter,
   createCloudStorageAdapter,
   FilesystemStorageAdapter,
+  LocalSecretsAdapter,
   StubComputeAdapter,
-  StubSecretsAdapter,
   StubStorageAdapter,
 } from '../../../src/adapters/cloud/index.js';
 import { createDataAdapter, StubRepository } from '../../../src/adapters/data/index.js';
@@ -27,6 +27,7 @@ describe('cloud adapter factories', () => {
   // directory, before that test runs.
   const ORIGINAL_ENV = process.env;
   const TEST_STORAGE_PATH = join(tmpdir(), `wally-factory-test-${randomUUID()}`);
+  const TEST_SECRETS_PATH = join(tmpdir(), `wally-factory-test-secrets-${randomUUID()}.enc`);
 
   beforeAll(() => {
     process.env = {
@@ -46,20 +47,22 @@ describe('cloud adapter factories', () => {
       LOCAL_SECRETS_MASTER_KEY: 'a'.repeat(32),
       LOG_LEVEL: 'silent',
       STORAGE_LOCAL_PATH: TEST_STORAGE_PATH,
+      SECRETS_LOCAL_PATH: TEST_SECRETS_PATH,
     };
   });
 
   afterAll(async () => {
     process.env = ORIGINAL_ENV;
     await rm(TEST_STORAGE_PATH, { recursive: true, force: true });
+    await rm(TEST_SECRETS_PATH, { force: true });
   });
 
   it("createCloudStorageAdapter('local') returns a FilesystemStorageAdapter", () => {
     expect(createCloudStorageAdapter('local')).toBeInstanceOf(FilesystemStorageAdapter);
   });
 
-  it("createCloudSecretsAdapter('local') returns a StubSecretsAdapter", () => {
-    expect(createCloudSecretsAdapter('local')).toBeInstanceOf(StubSecretsAdapter);
+  it("createCloudSecretsAdapter('local') returns a LocalSecretsAdapter", () => {
+    expect(createCloudSecretsAdapter('local')).toBeInstanceOf(LocalSecretsAdapter);
   });
 
   it("createCloudComputeAdapter('local') returns a StubComputeAdapter", () => {
