@@ -17,8 +17,8 @@ const JOB_STATUSES: readonly JobStatus[] = ['queued', 'running', 'paused', 'comp
 // instead of an opaque "document too large" error from the driver. A
 // real workflow hitting this cap almost certainly needs re-architecting
 // (e.g. splitting into sub-jobs), not a higher cap.
-const MAX_JOB_STEPS = 1000;
-const MAX_DRIFT_EVENTS = 5000;
+export const MAX_JOB_STEPS = 1000;
+export const MAX_DRIFT_EVENTS = 5000;
 
 export interface AgentJobDoc {
   _id: string;
