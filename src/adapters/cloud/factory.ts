@@ -7,8 +7,8 @@ import { createLogger } from '../../logging/index.js';
 import { AdapterNotRegisteredError } from '../errors.js';
 import type { ICloudComputeService, ICloudSecretsService, ICloudStorageService } from './interfaces/index.js';
 import { FilesystemStorageAdapter } from './local/FilesystemStorageAdapter.js';
+import { LocalComputeRunner } from './local/LocalComputeRunner.js';
 import { LocalSecretsAdapter } from './local/LocalSecretsAdapter.js';
-import { StubComputeAdapter } from './stubs/stub-compute-adapter.js';
 
 /**
  * Map-based registry so new provider implementations can be registered
@@ -54,7 +54,19 @@ cloudSecretsRegistry.register(
 );
 
 export const cloudComputeRegistry = new AdapterRegistry<ICloudComputeService>('cloud compute');
-cloudComputeRegistry.register('local', () => new StubComputeAdapter());
+// Real implementation (WO-017), not a stub — same local-first rationale as
+// cloudStorageRegistry above.
+cloudComputeRegistry.register(
+  'local',
+  () =>
+    new LocalComputeRunner(
+      getConfig().K6_BINARY_PATH,
+      getConfig().COMPUTE_TASK_TIMEOUT_MS,
+      getConfig().COMPUTE_GRACE_PERIOD_MS,
+      getConfig().COMPUTE_TASK_RETENTION_MS,
+      createLogger('LocalComputeRunner'),
+    ),
+);
 
 export function createCloudStorageAdapter(provider: CloudProvider): ICloudStorageService {
   return cloudStorageRegistry.resolve(provider);

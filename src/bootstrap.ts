@@ -15,6 +15,19 @@ function initStep<T>(logger: Logger, step: string, configValue: string, run: () 
   }
 }
 
+/** Runs an adapter's optional `init?()` hook (LocalSecretsAdapter's JWT key generation, LocalComputeRunner's k6 availability check, etc.), if it has one. */
+async function runOptionalInit(logger: Logger, step: string, configValue: string, adapter: { init?(): Promise<void> }): Promise<void> {
+  if (!adapter.init) {
+    return;
+  }
+  try {
+    await adapter.init();
+  } catch (error) {
+    logger.error({ step, configValue, err: error }, `Bootstrap failed at step: ${step}`);
+    throw error;
+  }
+}
+
 async function doBootstrap(): Promise<Readonly<AppContainer>> {
   const config = getConfig();
   const logger = createLogger('bootstrap');
@@ -26,17 +39,12 @@ async function doBootstrap(): Promise<Readonly<AppContainer>> {
   const cloudSecrets = initStep(logger, 'cloudSecrets', config.CLOUD_PROVIDER, () =>
     createCloudSecretsAdapter(config.CLOUD_PROVIDER),
   );
-  if (cloudSecrets.init) {
-    try {
-      await cloudSecrets.init();
-    } catch (error) {
-      logger.error({ step: 'cloudSecrets.init', configValue: config.CLOUD_PROVIDER, err: error }, 'Bootstrap failed at step: cloudSecrets.init');
-      throw error;
-    }
-  }
+  await runOptionalInit(logger, 'cloudSecrets.init', config.CLOUD_PROVIDER, cloudSecrets);
+
   const cloudCompute = initStep(logger, 'cloudCompute', config.COMPUTE_RUNNER, () =>
     createCloudComputeAdapter(config.COMPUTE_RUNNER),
   );
+  await runOptionalInit(logger, 'cloudCompute.init', config.COMPUTE_RUNNER, cloudCompute);
   const repositoryFactory = initStep(logger, 'dataAdapter', config.DATA_ENGINE, () =>
     createDataAdapter(config.DATA_ENGINE),
   );

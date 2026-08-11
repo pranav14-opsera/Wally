@@ -51,6 +51,13 @@ const baseEnvSchema = z.object({
   // required when CLOUD_PROVIDER=local.
   SECRETS_LOCAL_PATH: z.string().min(1).default('./data/secrets.enc'),
 
+  // LocalComputeRunner (COMPUTE_RUNNER=local) k6 process management —
+  // all configurable per WO-017's "never hardcoded literals" constraint.
+  K6_BINARY_PATH: z.string().min(1).default('k6'),
+  COMPUTE_TASK_TIMEOUT_MS: z.coerce.number().int().positive().default(600_000),
+  COMPUTE_GRACE_PERIOD_MS: z.coerce.number().int().positive().default(10_000),
+  COMPUTE_TASK_RETENTION_MS: z.coerce.number().int().positive().default(3_600_000),
+
   // How long audit log entries are retained. Drives the Mongoose
   // AuditLog schema's TTL index (expireAfterSeconds); Postgres has no
   // native equivalent and instead relies on a scheduled purge job (a
