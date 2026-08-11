@@ -9,10 +9,12 @@ import {
   StubStorageAdapter,
 } from '../../../src/adapters/cloud/index.js';
 import {
-  DuplicateEntityError,
+  DuplicateKeyError,
   EntityNotFoundError,
   StubRepository,
+  TransactionError,
 } from '../../../src/adapters/data/index.js';
+import type { BaseEntity } from '../../../src/adapters/data/index.js';
 
 describe('StubStorageAdapter', () => {
   it('round-trips upload/download', async () => {
@@ -101,24 +103,24 @@ describe('StubComputeAdapter', () => {
   });
 });
 
-interface UserEntity {
-  id: string;
+interface UserEntity extends BaseEntity {
   email: string;
   role: string;
 }
 
-interface ToolEntity {
-  id: string;
+interface ToolEntity extends BaseEntity {
   name: string;
   version: number;
 }
 
 describe('StubRepository', () => {
-  it('create/findById round-trip and generates an id when omitted', async () => {
+  it('create/findById round-trip, generates an id, and stamps created_at/updated_at', async () => {
     const repo = new StubRepository<UserEntity>('User');
     const created = await repo.create({ email: 'a@example.com', role: 'admin' });
 
     expect(created.id).toBeTruthy();
+    expect(created.created_at).toBeInstanceOf(Date);
+    expect(created.updated_at).toBeInstanceOf(Date);
     const found = await repo.findById(created.id);
     expect(found).toEqual(created);
   });
@@ -128,24 +130,82 @@ describe('StubRepository', () => {
     expect(await repo.findById('missing')).toBeNull();
   });
 
-  it('findMany filters by equality and applies limit/offset/sort', async () => {
+  it('findMany filters by eq operator and applies sort/pagination', async () => {
     const repo = new StubRepository<UserEntity>('User');
     await repo.create({ email: 'a@example.com', role: 'admin' });
     await repo.create({ email: 'b@example.com', role: 'viewer' });
     await repo.create({ email: 'c@example.com', role: 'admin' });
 
-    const admins = await repo.findMany({ role: 'admin' });
-    expect(admins).toHaveLength(2);
+    const admins = await repo.findMany({ role: { operator: 'eq', value: 'admin' } });
+    expect(admins.items).toHaveLength(2);
+    expect(admins.total).toBe(2);
+    expect(admins.hasNext).toBe(false);
 
-    const sorted = await repo.findMany({}, { sort: { email: 'desc' } });
-    expect(sorted.map((u) => u.email)).toEqual(['c@example.com', 'b@example.com', 'a@example.com']);
+    const sorted = await repo.findMany(undefined, { email: 'desc' });
+    expect(sorted.items.map((u) => u.email)).toEqual([
+      'c@example.com',
+      'b@example.com',
+      'a@example.com',
+    ]);
 
-    const paged = await repo.findMany({}, { limit: 1, offset: 1, sort: { email: 'asc' } });
-    expect(paged).toHaveLength(1);
-    expect(paged[0]?.email).toBe('b@example.com');
+    const paged = await repo.findMany(undefined, { email: 'asc' }, { kind: 'offset', limit: 1, offset: 1 });
+    expect(paged.items).toHaveLength(1);
+    expect(paged.items[0]?.email).toBe('b@example.com');
+    expect(paged.total).toBe(3);
+    expect(paged.hasNext).toBe(true);
   });
 
-  it('update throws EntityNotFoundError for a non-existent id and applies a partial update', async () => {
+  it('findMany supports the gt/in/isNull/contains operators', async () => {
+    const repo = new StubRepository<ToolEntity>('Tool');
+    await repo.create({ name: 'alpha-tool', version: 1 });
+    await repo.create({ name: 'beta-tool', version: 2 });
+    await repo.create({ name: 'gamma', version: 3 });
+
+    expect((await repo.findMany({ version: { operator: 'gt', value: 1 } })).total).toBe(2);
+    expect((await repo.findMany({ version: { operator: 'in', value: [1, 3] } })).total).toBe(2);
+    expect((await repo.findMany({ name: { operator: 'contains', value: '-tool' } })).total).toBe(2);
+  });
+
+  it('findMany paginates gracefully over an empty result set', async () => {
+    const repo = new StubRepository<UserEntity>('User');
+    const result = await repo.findMany({ role: { operator: 'eq', value: 'nonexistent' } });
+    expect(result).toEqual({ items: [], total: 0, hasNext: false });
+  });
+
+  it('findMany supports cursor pagination and returns nextCursor', async () => {
+    const repo = new StubRepository<UserEntity>('User');
+    const first = await repo.create({ email: 'a@example.com', role: 'admin' });
+    await repo.create({ email: 'b@example.com', role: 'admin' });
+    await repo.create({ email: 'c@example.com', role: 'admin' });
+
+    const page1 = await repo.findMany(undefined, undefined, { kind: 'cursor', limit: 1 });
+    expect(page1.items).toHaveLength(1);
+    expect(page1.items[0]?.id).toBe(first.id);
+    expect(page1.hasNext).toBe(true);
+    expect(page1.nextCursor).toBe(first.id);
+
+    const page2 = await repo.findMany(undefined, undefined, {
+      kind: 'cursor',
+      limit: 10,
+      cursor: page1.nextCursor,
+    });
+    expect(page2.items).toHaveLength(2);
+    expect(page2.hasNext).toBe(false);
+  });
+
+  it('createMany creates every entity and returns them in order', async () => {
+    const repo = new StubRepository<UserEntity>('User');
+    const created = await repo.createMany([
+      { email: 'a@example.com', role: 'admin' },
+      { email: 'b@example.com', role: 'viewer' },
+    ]);
+
+    expect(created).toHaveLength(2);
+    expect(created.map((u) => u.email)).toEqual(['a@example.com', 'b@example.com']);
+    expect(await repo.count()).toBe(2);
+  });
+
+  it('update throws EntityNotFoundError for a non-existent id, applies a partial update, and bumps updated_at', async () => {
     const repo = new StubRepository<UserEntity>('User');
     await expect(repo.update('missing', { role: 'viewer' })).rejects.toThrow(EntityNotFoundError);
 
@@ -153,6 +213,7 @@ describe('StubRepository', () => {
     const updated = await repo.update(created.id, { role: 'viewer' });
     expect(updated.role).toBe('viewer');
     expect(updated.email).toBe('a@example.com');
+    expect(updated.updated_at.getTime()).toBeGreaterThanOrEqual(created.updated_at.getTime());
   });
 
   it('delete throws EntityNotFoundError for a non-existent id and removes an existing one', async () => {
@@ -164,13 +225,13 @@ describe('StubRepository', () => {
     expect(await repo.findById(created.id)).toBeNull();
   });
 
-  it('create throws DuplicateEntityError when the id already exists', async () => {
+  it('create throws DuplicateKeyError when the id already exists', async () => {
     const repo = new StubRepository<UserEntity>('User');
     await repo.create({ id: 'fixed-id', email: 'a@example.com', role: 'admin' });
 
     await expect(
       repo.create({ id: 'fixed-id', email: 'b@example.com', role: 'viewer' }),
-    ).rejects.toThrow(DuplicateEntityError);
+    ).rejects.toThrow(DuplicateKeyError);
   });
 
   it('count respects an optional filter', async () => {
@@ -179,7 +240,27 @@ describe('StubRepository', () => {
     await repo.create({ email: 'b@example.com', role: 'viewer' });
 
     expect(await repo.count()).toBe(2);
-    expect(await repo.count({ role: 'admin' })).toBe(1);
+    expect(await repo.count({ role: { operator: 'eq', value: 'admin' } })).toBe(1);
+  });
+
+  it('transaction runs the callback and returns its result', async () => {
+    const repo = new StubRepository<UserEntity>('User');
+    const result = await repo.transaction(async (ctx) => {
+      expect(ctx.id).toBeTruthy();
+      return await repo.create({ email: 'a@example.com', role: 'admin' });
+    });
+
+    expect(result.email).toBe('a@example.com');
+  });
+
+  it('transaction rejects a nested transaction attempt with TransactionError', async () => {
+    const repo = new StubRepository<UserEntity>('User');
+
+    await expect(
+      repo.transaction(async () => {
+        await repo.transaction(async () => 'nested');
+      }),
+    ).rejects.toThrow(TransactionError);
   });
 
   it('generic type inference works correctly across two different entity shapes', async () => {

@@ -11,6 +11,7 @@ import {
   StubStorageAdapter,
 } from '../../../src/adapters/cloud/index.js';
 import { createDataAdapter, StubRepository } from '../../../src/adapters/data/index.js';
+import type { BaseEntity } from '../../../src/adapters/data/index.js';
 import { AdapterNotRegisteredError } from '../../../src/adapters/errors.js';
 
 describe('cloud adapter factories', () => {
@@ -43,13 +44,13 @@ describe('cloud adapter factories', () => {
 describe('data adapter factory', () => {
   it("createDataAdapter('postgres') returns a factory producing a StubRepository", () => {
     const repositoryFactory = createDataAdapter('postgres');
-    const repo = repositoryFactory<{ id: string }>('TestEntity');
+    const repo = repositoryFactory<BaseEntity>('TestEntity');
     expect(repo).toBeInstanceOf(StubRepository);
   });
 
   it("createDataAdapter('mongo') also returns a StubRepository-producing factory", () => {
     const repositoryFactory = createDataAdapter('mongo');
-    const repo = repositoryFactory<{ id: string }>('TestEntity');
+    const repo = repositoryFactory<BaseEntity>('TestEntity');
     expect(repo).toBeInstanceOf(StubRepository);
   });
 });

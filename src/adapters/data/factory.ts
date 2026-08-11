@@ -1,7 +1,8 @@
 import type { DataEngine } from '../../config/schema.js';
 import { AdapterNotRegisteredError } from '../errors.js';
-import type { IRepository } from './interfaces.js';
+import type { IRepository } from './interfaces/IRepository.js';
 import { StubRepository } from './stubs/stub-repository.js';
+import type { BaseEntity } from './types.js';
 
 /**
  * A data engine resolves to a *repository factory* (not a single
@@ -10,7 +11,7 @@ import { StubRepository } from './stubs/stub-repository.js';
  * returned factory is then called per entity name (see
  * `AppContainer.createRepository` in src/container.ts).
  */
-export type RepositoryFactory = <T extends { id: string }>(entityName: string) => IRepository<T>;
+export type RepositoryFactory = <T extends BaseEntity>(entityName: string) => IRepository<T>;
 
 class DataAdapterRegistry {
   private readonly factories = new Map<string, RepositoryFactory>();
