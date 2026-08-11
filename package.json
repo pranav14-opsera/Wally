@@ -11,17 +11,26 @@
     "lint": "eslint 'src/**/*.ts' --no-error-on-unmatched-pattern",
     "lint:fix": "eslint 'src/**/*.ts' --fix --no-error-on-unmatched-pattern",
     "build": "tsc",
-    "test:unit": "echo 'Unit tests not yet configured'",
-    "test:integration": "echo 'Integration tests not yet configured'",
-    "test:contract": "echo 'Contract tests not yet configured'",
-    "test:e2e": "echo 'E2E tests not yet configured'"
+    "test:unit": "vitest run --config vitest.config.unit.ts",
+    "test:integration": "vitest run --config vitest.config.integration.ts",
+    "test:contract": "bash scripts/run-contract-tests.sh",
+    "test:e2e": "vitest run --config vitest.config.e2e.ts",
+    "test": "npm run test:unit && npm run test:integration && npm run test:contract && npm run test:e2e"
+  },
+  "dependencies": {
+    "fastify": "^5.11.3"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/supertest": "^6.0.3",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
+    "@vitest/coverage-v8": "^1.6.1",
     "eslint": "^9.0.0",
     "prettier": "^3.0.0",
-    "typescript": "^5.0.0"
+    "supertest": "^7.2.2",
+    "typescript": "^5.0.0",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^1.6.1"
   }
 }
