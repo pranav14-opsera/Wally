@@ -1,0 +1,243 @@
+// Wally — Prisma schema (PostgreSQL). Canonical relational model backing
+// the Postgres/Prisma side of the Data Adapter Module (DATA_ENGINE=postgres).
+// Field names are snake_case to match the shared TS entity interfaces in
+// src/adapters/data/entities/*.ts 1:1 — PrismaRepository (WO-009) maps
+// query results straight through with no camelCase translation layer.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AgentType {
+  integration
+  validation
+  load_testing
+  api_lifecycle
+}
+
+enum JobStatus {
+  queued
+  running
+  paused
+  completed
+  failed
+  cancelled
+}
+
+enum StepStatus {
+  pending
+  running
+  completed
+  failed
+  skipped
+}
+
+enum UserRole {
+  admin
+  manager
+  viewer
+}
+
+enum SloVerdict {
+  pass
+  fail
+}
+
+enum DriftType {
+  value_mismatch
+  missing_metric
+  threshold_exceeded
+}
+
+model User {
+  id                    String    @id @default(uuid()) @db.Uuid
+  email                 String    @unique
+  name                  String
+  password_hash         String
+  role                  UserRole  @default(viewer)
+  is_locked             Boolean   @default(false)
+  failed_login_attempts Int       @default(0)
+  locked_until          DateTime?
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @updatedAt
+
+  agent_jobs AgentJob[]
+  audit_logs AuditLog[]
+
+  @@map("users")
+}
+
+model AgentJob {
+  id              String     @id @default(uuid()) @db.Uuid
+  user_id         String     @db.Uuid
+  agent_type      AgentType
+  status          JobStatus  @default(queued)
+  input_params    Json
+  result_summary  Json?
+  current_step    Int        @default(0)
+  total_steps     Int
+  error_message   String?
+  queued_at       DateTime   @default(now())
+  started_at      DateTime?
+  completed_at    DateTime?
+  created_at      DateTime   @default(now())
+  updated_at      DateTime   @updatedAt
+
+  user               User             @relation(fields: [user_id], references: [id])
+  job_steps          JobStep[]
+  drift_events       DriftEvent[]
+  load_test_results  LoadTestResult[]
+
+  @@index([agent_type, status, created_at])
+  @@index([user_id, created_at])
+  @@map("agent_jobs")
+}
+
+model JobStep {
+  id            String      @id @default(uuid()) @db.Uuid
+  job_id        String      @db.Uuid
+  step_order    Int
+  step_name     String
+  status        StepStatus  @default(pending)
+  input_data    Json?
+  output_data   Json?
+  error_message String?
+  duration_ms   Int?
+  started_at    DateTime?
+  completed_at  DateTime?
+  created_at    DateTime    @default(now())
+  updated_at    DateTime    @updatedAt
+
+  agent_job AgentJob @relation(fields: [job_id], references: [id])
+
+  // The uniqueness constraint's underlying index already covers every
+  // (job_id, step_order) lookup/ordering query — a separate plain index
+  // on the same columns would just be a redundant write-cost duplicate.
+  @@unique([job_id, step_order])
+  @@map("job_steps")
+}
+
+model ToolRegistry {
+  id                String    @id @default(uuid()) @db.Uuid
+  name              String    @unique
+  description       String
+  spec_url          String?
+  endpoints         Json
+  credential_ref    String?
+  health_status     String    @default("unknown")
+  last_health_check DateTime?
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  @@map("tool_registry")
+}
+
+model MetricRegistry {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String   @unique
+  description   String
+  source_query  String
+  dashboard_ref String?
+  thresholds    Json
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  drift_events DriftEvent[]
+
+  @@map("metric_registry")
+}
+
+model ConfigRegistry {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique
+  value       String
+  data_type   String
+  description String?
+  category    String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@map("config_registry")
+}
+
+model SpecRegistry {
+  id           String   @id @default(uuid()) @db.Uuid
+  api_name     String
+  version      String
+  spec_content Json
+  checksum     String
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  @@unique([api_name, version])
+  @@map("spec_registry")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  actor_id       String?  @db.Uuid
+  action         String
+  resource_type  String
+  resource_id    String?
+  change_details Json?
+  ip_address     String?
+  user_agent     String?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  // SetNull, not Restrict/Cascade: an audit entry must outlive the user
+  // account that produced it — deleting a user must never delete or be
+  // blocked by their audit trail.
+  actor User? @relation(fields: [actor_id], references: [id], onDelete: SetNull)
+
+  @@index([actor_id, created_at])
+  @@index([resource_type, resource_id])
+  @@map("audit_logs")
+}
+
+model DriftEvent {
+  id               String    @id @default(uuid()) @db.Uuid
+  job_id           String    @db.Uuid
+  metric_id        String    @db.Uuid
+  source_value     Float
+  dashboard_value  Float
+  drift_type       DriftType
+  affected_records Json
+  detected_at      DateTime  @default(now())
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  agent_job AgentJob       @relation(fields: [job_id], references: [id])
+  // Restrict, not Cascade: a metric definition that has recorded drift
+  // history must not be deletable out from under that history.
+  metric    MetricRegistry @relation(fields: [metric_id], references: [id], onDelete: Restrict)
+
+  @@index([job_id, metric_id])
+  @@map("drift_events")
+}
+
+model LoadTestResult {
+  id              String     @id @default(uuid()) @db.Uuid
+  job_id          String     @db.Uuid
+  profile_config  Json
+  p50_latency_ms  Float
+  p95_latency_ms  Float
+  p99_latency_ms  Float
+  throughput_rps  Float
+  error_rate_pct  Float
+  slo_verdict     SloVerdict
+  raw_metrics     Json
+  executed_at     DateTime   @default(now())
+  created_at      DateTime   @default(now())
+  updated_at      DateTime   @updatedAt
+
+  agent_job AgentJob @relation(fields: [job_id], references: [id])
+
+  @@index([job_id])
+  @@map("load_test_results")
+}

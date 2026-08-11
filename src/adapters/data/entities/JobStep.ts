@@ -6,7 +6,7 @@ export interface JobStep extends BaseEntity {
   step_order: number;
   step_name: string;
   status: StepStatus;
-  input_data: Record<string, unknown>;
+  input_data: Record<string, unknown> | null;
   output_data: Record<string, unknown> | null;
   error_message: string | null;
   duration_ms: number | null;

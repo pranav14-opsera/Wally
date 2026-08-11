@@ -16,3 +16,5 @@ secrets/
 *-stderr.txt
 precommit-scan-*.md
 npm-audit.json
+
+/src/generated/prisma
