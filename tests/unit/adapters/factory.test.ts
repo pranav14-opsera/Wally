@@ -3,7 +3,7 @@ import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   AdapterRegistry,
@@ -16,8 +16,7 @@ import {
   LocalSecretsAdapter,
   StubStorageAdapter,
 } from '../../../src/adapters/cloud/index.js';
-import { createDataAdapter, StubRepository } from '../../../src/adapters/data/index.js';
-import type { BaseEntity } from '../../../src/adapters/data/index.js';
+import { buildDataAdapterConfig, ConnectionError, createDataAdapter } from '../../../src/adapters/data/index.js';
 import { AdapterNotRegisteredError } from '../../../src/adapters/errors.js';
 
 describe('cloud adapter factories', () => {
@@ -83,17 +82,184 @@ describe('cloud adapter factories', () => {
   });
 });
 
+// Hoisted so the same mock functions can be referenced both inside the
+// vi.mock() factories below (which vitest hoists above these imports) and
+// reconfigured per-test (mockResolvedValueOnce, mockReset) — a plain
+// `const` declared after vi.mock() calls would be hoisted-above by
+// vitest's transform without ever being initialized yet, which is exactly
+// the pitfall vi.hoisted() exists to avoid.
+const { prismaHealthCheckMock, prismaDisconnectMock, mongoHealthCheckMock, mongoDisconnectMock } = vi.hoisted(() => ({
+  prismaHealthCheckMock: vi.fn(async () => true),
+  prismaDisconnectMock: vi.fn(async () => undefined),
+  mongoHealthCheckMock: vi.fn(async () => true),
+  mongoDisconnectMock: vi.fn(async () => undefined),
+}));
+
+// factory.ts dynamically `import()`s these six modules rather than
+// statically importing Prisma/Mongoose at the top level (so selecting one
+// DATA_ENGINE never loads the other engine's driver) — mocking them here
+// verifies the factory wires each engine's repositories and health
+// check/disconnect correctly without needing a real Postgres/Mongo
+// instance, per this WO's own AC8 ("using mocked adapters").
+vi.mock('../../../src/adapters/data/prisma/prisma-client.js', () => ({
+  getPrismaClient: vi.fn(() => ({ marker: 'fake-prisma-client' })),
+  healthCheck: prismaHealthCheckMock,
+  disconnectPrismaClient: prismaDisconnectMock,
+}));
+vi.mock('../../../src/adapters/data/prisma/PrismaRepository.js', () => {
+  class FakePrismaRepository {
+    public constructor(
+      public readonly prisma: unknown,
+      public readonly getDelegate: unknown,
+      public readonly entityName: string,
+      public readonly logger: unknown,
+    ) {}
+  }
+  return { PrismaRepository: FakePrismaRepository };
+});
+vi.mock('../../../src/adapters/data/prisma/PrismaAgentJobRepository.js', () => {
+  class FakePrismaAgentJobRepository {
+    public constructor(
+      public readonly prisma: unknown,
+      public readonly logger: unknown,
+    ) {}
+  }
+  return { PrismaAgentJobRepository: FakePrismaAgentJobRepository };
+});
+
+vi.mock('../../../src/adapters/data/mongoose/mongoose-client.js', () => ({
+  getMongooseModels: vi.fn(async () => ({
+    User: { marker: 'User' },
+    AgentJob: { marker: 'AgentJob' },
+    ToolRegistry: { marker: 'ToolRegistry' },
+    MetricRegistry: { marker: 'MetricRegistry' },
+    ConfigRegistry: { marker: 'ConfigRegistry' },
+    SpecRegistry: { marker: 'SpecRegistry' },
+    AuditLog: { marker: 'AuditLog' },
+    LoadTestResult: { marker: 'LoadTestResult' },
+  })),
+  healthCheck: mongoHealthCheckMock,
+  disconnectMongoose: mongoDisconnectMock,
+}));
+vi.mock('../../../src/adapters/data/mongoose/MongooseRepository.js', () => {
+  class FakeMongooseRepository {
+    public constructor(
+      public readonly model: unknown,
+      public readonly entityName: string,
+      public readonly logger: unknown,
+    ) {}
+  }
+  return { MongooseRepository: FakeMongooseRepository };
+});
+vi.mock('../../../src/adapters/data/mongoose/MongooseAgentJobRepository.js', () => {
+  class FakeMongooseAgentJobRepository {
+    public constructor(
+      public readonly model: unknown,
+      public readonly logger: unknown,
+    ) {}
+  }
+  return { MongooseAgentJobRepository: FakeMongooseAgentJobRepository };
+});
+vi.mock('../../../src/adapters/data/mongoose/MongooseJobStepRepository.js', () => {
+  class FakeMongooseJobStepRepository {
+    public constructor(
+      public readonly model: unknown,
+      public readonly logger: unknown,
+    ) {}
+  }
+  return { MongooseJobStepRepository: FakeMongooseJobStepRepository };
+});
+vi.mock('../../../src/adapters/data/mongoose/MongooseDriftEventRepository.js', () => {
+  class FakeMongooseDriftEventRepository {
+    public constructor(
+      public readonly model: unknown,
+      public readonly logger: unknown,
+    ) {}
+  }
+  return { MongooseDriftEventRepository: FakeMongooseDriftEventRepository };
+});
+
 describe('data adapter factory', () => {
-  it("createDataAdapter('postgres') returns a factory producing a StubRepository", () => {
-    const repositoryFactory = createDataAdapter('postgres');
-    const repo = repositoryFactory<BaseEntity>('TestEntity');
-    expect(repo).toBeInstanceOf(StubRepository);
+  afterEach(() => {
+    prismaHealthCheckMock.mockReset().mockResolvedValue(true);
+    prismaDisconnectMock.mockReset().mockResolvedValue(undefined);
+    mongoHealthCheckMock.mockReset().mockResolvedValue(true);
+    mongoDisconnectMock.mockReset().mockResolvedValue(undefined);
   });
 
-  it("createDataAdapter('mongo') also returns a StubRepository-producing factory", () => {
-    const repositoryFactory = createDataAdapter('mongo');
-    const repo = repositoryFactory<BaseEntity>('TestEntity');
-    expect(repo).toBeInstanceOf(StubRepository);
+  it("createDataAdapter({ engine: 'postgres', ... }) builds all 10 entity repositories, keyed identically to the mongo branch", async () => {
+    const context = await createDataAdapter(buildDataAdapterConfig('postgres'));
+
+    expect(context.engine).toBe('postgres');
+    expect(Object.keys(context.repositories).sort()).toEqual(
+      [
+        'users',
+        'agentJobs',
+        'jobSteps',
+        'toolRegistry',
+        'metricRegistry',
+        'configRegistry',
+        'specRegistry',
+        'auditLogs',
+        'driftEvents',
+        'loadTestResults',
+      ].sort(),
+    );
+    expect(prismaHealthCheckMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("createDataAdapter({ engine: 'mongo', ... }) builds all 10 entity repositories", async () => {
+    const context = await createDataAdapter(buildDataAdapterConfig('mongo'));
+
+    expect(context.engine).toBe('mongo');
+    expect(Object.keys(context.repositories)).toHaveLength(10);
+    expect(mongoHealthCheckMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('disconnect() delegates to the engine-specific disconnect function', async () => {
+    const context = await createDataAdapter(buildDataAdapterConfig('postgres'));
+    await context.disconnect();
+
+    expect(prismaDisconnectMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws ConnectionError when the health check resolves false (database unreachable/unhealthy)', async () => {
+    prismaHealthCheckMock.mockResolvedValueOnce(false);
+
+    await expect(createDataAdapter(buildDataAdapterConfig('postgres'))).rejects.toBeInstanceOf(ConnectionError);
+  });
+
+  it('throws ConnectionError when the health check rejects', async () => {
+    mongoHealthCheckMock.mockRejectedValueOnce(new Error('connection refused'));
+
+    const rejection = createDataAdapter(buildDataAdapterConfig('mongo'));
+    await expect(rejection).rejects.toBeInstanceOf(ConnectionError);
+    await expect(rejection).rejects.toThrow(/connection refused/);
+  });
+
+  it('throws ConnectionError when the health check exceeds healthCheckTimeoutMs', async () => {
+    prismaHealthCheckMock.mockImplementationOnce(
+      () => new Promise((resolve) => setTimeout(() => resolve(true), 200)),
+    );
+
+    const rejection = createDataAdapter(buildDataAdapterConfig('postgres', { healthCheckTimeoutMs: 20 }));
+    await expect(rejection).rejects.toBeInstanceOf(ConnectionError);
+    await expect(rejection).rejects.toThrow(/timed out/);
+  });
+
+  it('rejects an invalid engine value with a descriptive error listing valid options', async () => {
+    // Bypasses the DataEngine union type on purpose — a direct caller
+    // that skips buildDataAdapterConfig (or getConfig()/envSchema
+    // upstream) must still get a clear error, not a silent fallthrough
+    // to the mongo branch.
+    const invalidConfig = {
+      engine: 'mysql',
+      poolSize: 10,
+      connectionTimeoutMs: 30_000,
+      healthCheckTimeoutMs: 5_000,
+    } as unknown as Parameters<typeof createDataAdapter>[0];
+
+    await expect(createDataAdapter(invalidConfig)).rejects.toThrow(/Invalid DATA_ENGINE "mysql".*postgres.*mongo/s);
   });
 });
 

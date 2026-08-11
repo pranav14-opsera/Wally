@@ -1,10 +1,18 @@
 import type { Logger } from 'pino';
 
 import { createCloudComputeAdapter, createCloudSecretsAdapter, createCloudStorageAdapter } from './adapters/cloud/index.js';
-import { createDataAdapter } from './adapters/data/index.js';
+import { buildDataAdapterConfig, createDataAdapter } from './adapters/data/index.js';
+import type { DataAdapterContext } from './adapters/data/index.js';
 import type { AppContainer } from './container.js';
 import { getConfig } from './config/index.js';
 import { ConsoleAuditLogger, createLogger } from './logging/index.js';
+
+// How long graceful shutdown waits for `dataAdapter.disconnect()` (which
+// itself waits for in-flight transactions, per Prisma's/Mongoose's own
+// disconnect semantics) before giving up and exiting anyway — a hung
+// database connection must never prevent the process from ever
+// terminating on SIGTERM/SIGINT.
+const SHUTDOWN_DISCONNECT_TIMEOUT_MS = 10_000;
 
 function initStep<T>(logger: Logger, step: string, configValue: string, run: () => T): T {
   try {
@@ -28,6 +36,59 @@ async function runOptionalInit(logger: Logger, step: string, configValue: string
   }
 }
 
+async function initStepAsync<T>(logger: Logger, step: string, configValue: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    logger.error({ step, configValue, err: error }, `Bootstrap failed at step: ${step}`);
+    throw error;
+  }
+}
+
+let shutdownHooksRegistered = false;
+
+/**
+ * Registers SIGTERM/SIGINT handlers that disconnect the active database
+ * connection before the process exits (AC6) — `once`, guarded by a
+ * module-level flag (not just `process.once`'s own once-per-signal
+ * semantics) so a failed `bootstrap()` call that gets retried (see
+ * `bootstrap()`'s doc comment below) never registers a second pair of
+ * handlers pointed at a stale `dataAdapter` from the failed attempt.
+ */
+function registerShutdownHooks(logger: Logger, dataAdapter: DataAdapterContext): void {
+  if (shutdownHooksRegistered) {
+    return;
+  }
+  shutdownHooksRegistered = true;
+
+  const onSignal = (signal: NodeJS.Signals): void => {
+    logger.info({ signal }, 'Received shutdown signal, disconnecting data adapter');
+    const timeout = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        logger.warn(
+          { signal, timeoutMs: SHUTDOWN_DISCONNECT_TIMEOUT_MS },
+          'Data adapter disconnect did not complete within the shutdown timeout — exiting anyway',
+        );
+        resolve();
+      }, SHUTDOWN_DISCONNECT_TIMEOUT_MS);
+    });
+
+    Promise.race([
+      dataAdapter.disconnect().then(() => logger.info({ signal }, 'Data adapter disconnected')),
+      timeout,
+    ])
+      .catch((error: unknown) => {
+        logger.error({ err: error, signal }, 'Error disconnecting data adapter during shutdown');
+      })
+      .finally(() => {
+        process.exit(0);
+      });
+  };
+
+  process.once('SIGTERM', onSignal);
+  process.once('SIGINT', onSignal);
+}
+
 async function doBootstrap(): Promise<Readonly<AppContainer>> {
   const config = getConfig();
   const logger = createLogger('bootstrap');
@@ -45,9 +106,10 @@ async function doBootstrap(): Promise<Readonly<AppContainer>> {
     createCloudComputeAdapter(config.COMPUTE_RUNNER),
   );
   await runOptionalInit(logger, 'cloudCompute.init', config.COMPUTE_RUNNER, cloudCompute);
-  const repositoryFactory = initStep(logger, 'dataAdapter', config.DATA_ENGINE, () =>
-    createDataAdapter(config.DATA_ENGINE),
+  const dataAdapter = await initStepAsync(logger, 'dataAdapter', config.DATA_ENGINE, () =>
+    createDataAdapter(buildDataAdapterConfig(config.DATA_ENGINE)),
   );
+  registerShutdownHooks(logger, dataAdapter);
 
   const container: AppContainer = {
     config,
@@ -56,7 +118,7 @@ async function doBootstrap(): Promise<Readonly<AppContainer>> {
     cloudStorage,
     cloudSecrets,
     cloudCompute,
-    createRepository: (entityName) => repositoryFactory(entityName),
+    dataAdapter,
   };
 
   const frozen = Object.freeze(container);

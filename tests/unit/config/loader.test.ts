@@ -39,6 +39,24 @@ describe('loadConfig', () => {
       .toThrowError(/CLOUD_PROVIDER/);
   });
 
+  // WO-013 edge cases: DATA_ENGINE must tolerate the whitespace/casing a
+  // human is likely to introduce hand-editing an env file, while still
+  // failing fast (with a clear, DATA_ENGINE-naming error) for a value
+  // that isn't 'postgres' or 'mongo' under any casing/trimming.
+  it('normalizes DATA_ENGINE whitespace before validation', () => {
+    const config = loadConfig(createValidPostgresEnv({ DATA_ENGINE: ' postgres ' }));
+    expect(config.DATA_ENGINE).toBe('postgres');
+  });
+
+  it('normalizes DATA_ENGINE casing before validation', () => {
+    const config = loadConfig(createValidMongoEnv({ DATA_ENGINE: 'MONGO' }));
+    expect(config.DATA_ENGINE).toBe('mongo');
+  });
+
+  it('throws a descriptive error for an invalid DATA_ENGINE enum value listing DATA_ENGINE by name', () => {
+    expect(() => loadConfig(createValidPostgresEnv({ DATA_ENGINE: 'mysql' }))).toThrowError(/DATA_ENGINE/);
+  });
+
   it('reports every missing/invalid variable in a single error, not just the first', () => {
     let thrown: Error | undefined;
     try {
