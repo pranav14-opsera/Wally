@@ -1,0 +1,5 @@
+{
+  "name": "sample-artifact",
+  "description": "Fixture file for FilesystemStorageAdapter upload/download tests.",
+  "values": [1, 2, 3]
+}

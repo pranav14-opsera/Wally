@@ -1,12 +1,14 @@
 // Relative import, not the @config alias — see the note in
 // src/logging/logger.ts for why cross-module imports in src/ use real
 // relative paths rather than tsconfig path aliases.
+import { getConfig } from '../../config/index.js';
 import type { CloudProvider, ComputeRunner } from '../../config/schema.js';
+import { createLogger } from '../../logging/index.js';
 import { AdapterNotRegisteredError } from '../errors.js';
 import type { ICloudComputeService, ICloudSecretsService, ICloudStorageService } from './interfaces/index.js';
+import { FilesystemStorageAdapter } from './local/FilesystemStorageAdapter.js';
 import { StubComputeAdapter } from './stubs/stub-compute-adapter.js';
 import { StubSecretsAdapter } from './stubs/stub-secrets-adapter.js';
-import { StubStorageAdapter } from './stubs/stub-storage-adapter.js';
 
 /**
  * Map-based registry so new provider implementations can be registered
@@ -33,7 +35,15 @@ export class AdapterRegistry<TAdapter> {
 }
 
 export const cloudStorageRegistry = new AdapterRegistry<ICloudStorageService>('cloud storage');
-cloudStorageRegistry.register('local', () => new StubStorageAdapter());
+// Real implementation, not a stub — the local-first principle requires
+// CLOUD_PROVIDER=local to exercise production-grade code paths. getConfig()
+// is called lazily inside this closure (deferred until resolve() actually
+// runs during bootstrap), not at module load, since config validation must
+// happen first.
+cloudStorageRegistry.register(
+  'local',
+  () => new FilesystemStorageAdapter(getConfig().STORAGE_LOCAL_PATH, createLogger('FilesystemStorageAdapter')),
+);
 
 export const cloudSecretsRegistry = new AdapterRegistry<ICloudSecretsService>('cloud secrets');
 cloudSecretsRegistry.register('local', () => new StubSecretsAdapter());

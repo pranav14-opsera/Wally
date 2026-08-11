@@ -49,7 +49,14 @@ export interface ComputeTaskResult {
   completedAt: Date;
 }
 
-export type CloudErrorCode = 'NOT_FOUND' | 'ALREADY_EXISTS' | 'INVALID_ARGUMENT' | 'NOT_IMPLEMENTED' | 'PROVIDER_ERROR';
+export type CloudErrorCode =
+  | 'NOT_FOUND'
+  | 'ALREADY_EXISTS'
+  | 'INVALID_ARGUMENT'
+  | 'NOT_IMPLEMENTED'
+  | 'PROVIDER_ERROR'
+  | 'PERMISSION_DENIED'
+  | 'STORAGE_FULL';
 
 interface CloudAdapterErrorJSON {
   name: string;
