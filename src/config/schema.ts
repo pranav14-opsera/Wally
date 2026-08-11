@@ -44,6 +44,13 @@ const baseEnvSchema = z.object({
   // Only meaningful for the local provider, so it has a default rather
   // than a conditional-required check like LOCAL_SECRETS_MASTER_KEY.
   STORAGE_LOCAL_PATH: z.string().min(1).default('./data/storage'),
+
+  // How long audit log entries are retained. Drives the Mongoose
+  // AuditLog schema's TTL index (expireAfterSeconds); Postgres has no
+  // native equivalent and instead relies on a scheduled purge job (a
+  // later WO under REQ-009's data retention work) reading this same
+  // value — one config field, not a per-engine duplicate.
+  AUDIT_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(365),
 });
 
 function requireField(
