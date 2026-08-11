@@ -15,6 +15,14 @@ export default mergeConfig(
           singleFork: true,
         },
       },
+      // The 80% threshold is enforced comprehensively by test:unit — this
+      // category only exercises the handful of files touching real
+      // external services (and skips entirely when those aren't
+      // reachable), so grading it against the same global bar would fail
+      // any run where a dependency-gated suite is conditionally skipped.
+      coverage: {
+        enabled: false,
+      },
     },
   }),
 );

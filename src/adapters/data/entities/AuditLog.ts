@@ -1,11 +1,13 @@
 import type { BaseEntity } from '../types.js';
 
 export interface AuditLog extends BaseEntity {
-  actor_id: string;
+  // Nullable: WO-008's User FK uses onDelete SetNull, so a log entry
+  // outlives the user account that produced it.
+  actor_id: string | null;
   action: string;
   resource_type: string;
-  resource_id: string;
-  change_details: Record<string, unknown>;
-  ip_address: string;
-  user_agent: string;
+  resource_id: string | null;
+  change_details: Record<string, unknown> | null;
+  ip_address: string | null;
+  user_agent: string | null;
 }

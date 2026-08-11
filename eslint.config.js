@@ -6,7 +6,9 @@ import noHardcodedConfig from './eslint-rules/no-hardcoded-config.js';
 /** @type {import('eslint').Linter.Config[]} */
 export default [
   {
-    ignores: ['node_modules/**', 'dist/**', 'coverage/**'],
+    // src/generated/** is Prisma-generated output (regenerated via
+    // `prisma generate`, gitignored) — not hand-written code, not linted.
+    ignores: ['node_modules/**', 'dist/**', 'coverage/**', 'src/generated/**'],
   },
   {
     files: ['src/**/*.ts', 'tests/**/*.ts'],

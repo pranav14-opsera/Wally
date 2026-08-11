@@ -15,6 +15,11 @@ export default mergeConfig(
           singleFork: true,
         },
       },
+      // See vitest.config.integration.ts — the 80% threshold is enforced
+      // comprehensively by test:unit, not per-category.
+      coverage: {
+        enabled: false,
+      },
     },
   }),
 );

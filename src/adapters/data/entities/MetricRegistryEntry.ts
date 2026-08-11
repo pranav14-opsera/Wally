@@ -4,6 +4,6 @@ export interface MetricRegistryEntry extends BaseEntity {
   name: string;
   description: string;
   source_query: string;
-  dashboard_ref: string;
+  dashboard_ref: string | null;
   thresholds: Record<string, unknown>;
 }
