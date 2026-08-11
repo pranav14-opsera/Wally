@@ -5,7 +5,88 @@ import { join } from 'node:path';
 
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { BaseEntity } from '../../../src/adapters/data/index.js';
+// WO-013: bootstrap() now calls createDataAdapter(), which performs a real
+// connection health check (AC5) — mock the same six dynamically-`import()`ed
+// modules factory.ts loads (see tests/unit/adapters/factory.test.ts for the
+// identical setup, duplicated here rather than shared since vi.mock() must
+// be hoisted within the file that needs the interception) so bootstrap()
+// can succeed in these unit tests without a real Postgres/Mongo instance.
+vi.mock('../../../src/adapters/data/prisma/prisma-client.js', () => ({
+  getPrismaClient: vi.fn(() => ({ marker: 'fake-prisma-client' })),
+  healthCheck: vi.fn(async () => true),
+  disconnectPrismaClient: vi.fn(async () => undefined),
+}));
+vi.mock('../../../src/adapters/data/prisma/PrismaRepository.js', () => {
+  class FakePrismaRepository {
+    public constructor(
+      public readonly prisma: unknown,
+      public readonly getDelegate: unknown,
+      public readonly entityName: string,
+      public readonly logger: unknown,
+    ) {}
+  }
+  return { PrismaRepository: FakePrismaRepository };
+});
+vi.mock('../../../src/adapters/data/prisma/PrismaAgentJobRepository.js', () => {
+  class FakePrismaAgentJobRepository {
+    public constructor(
+      public readonly prisma: unknown,
+      public readonly logger: unknown,
+    ) {}
+  }
+  return { PrismaAgentJobRepository: FakePrismaAgentJobRepository };
+});
+vi.mock('../../../src/adapters/data/mongoose/mongoose-client.js', () => ({
+  getMongooseModels: vi.fn(async () => ({
+    User: {},
+    AgentJob: {},
+    ToolRegistry: {},
+    MetricRegistry: {},
+    ConfigRegistry: {},
+    SpecRegistry: {},
+    AuditLog: {},
+    LoadTestResult: {},
+  })),
+  healthCheck: vi.fn(async () => true),
+  disconnectMongoose: vi.fn(async () => undefined),
+}));
+vi.mock('../../../src/adapters/data/mongoose/MongooseRepository.js', () => {
+  class FakeMongooseRepository {
+    public constructor(
+      public readonly model: unknown,
+      public readonly entityName: string,
+      public readonly logger: unknown,
+    ) {}
+  }
+  return { MongooseRepository: FakeMongooseRepository };
+});
+vi.mock('../../../src/adapters/data/mongoose/MongooseAgentJobRepository.js', () => {
+  class FakeMongooseAgentJobRepository {
+    public constructor(
+      public readonly model: unknown,
+      public readonly logger: unknown,
+    ) {}
+  }
+  return { MongooseAgentJobRepository: FakeMongooseAgentJobRepository };
+});
+vi.mock('../../../src/adapters/data/mongoose/MongooseJobStepRepository.js', () => {
+  class FakeMongooseJobStepRepository {
+    public constructor(
+      public readonly model: unknown,
+      public readonly logger: unknown,
+    ) {}
+  }
+  return { MongooseJobStepRepository: FakeMongooseJobStepRepository };
+});
+vi.mock('../../../src/adapters/data/mongoose/MongooseDriftEventRepository.js', () => {
+  class FakeMongooseDriftEventRepository {
+    public constructor(
+      public readonly model: unknown,
+      public readonly logger: unknown,
+    ) {}
+  }
+  return { MongooseDriftEventRepository: FakeMongooseDriftEventRepository };
+});
 
 // bootstrap() constructs a real FilesystemStorageAdapter (not a stub) for
 // CLOUD_PROVIDER=local, which touches disk in its constructor — point it
@@ -57,11 +138,10 @@ describe('bootstrap', () => {
     expect(container.cloudStorage).toBeDefined();
     expect(container.cloudSecrets).toBeDefined();
     expect(container.cloudCompute).toBeDefined();
-    expect(typeof container.createRepository).toBe('function');
-
-    const repo = container.createRepository<BaseEntity & { name: string }>('TestEntity');
-    const created = await repo.create({ name: 'sample' });
-    expect(created.name).toBe('sample');
+    expect(container.dataAdapter).toBeDefined();
+    expect(container.dataAdapter.engine).toBe('postgres');
+    expect(Object.keys(container.dataAdapter.repositories)).toHaveLength(10);
+    expect(typeof container.dataAdapter.disconnect).toBe('function');
   });
 
   it('throws when config is invalid (missing required env vars)', async () => {

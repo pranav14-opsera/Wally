@@ -17,9 +17,21 @@ const LOCAL_SECRETS_MASTER_KEY_MIN_LENGTH = 32;
  * separately in `envSchema` via `.superRefine()` so that, for example,
  * MONGO_* variables can be safely omitted when DATA_ENGINE=postgres.
  */
+// Trims and lowercases DATA_ENGINE before the enum check (WO-013 edge
+// cases: ' postgres ' or 'Postgres' must resolve the same as 'postgres',
+// not fail validation on whitespace/casing a human typing an env var by
+// hand is likely to introduce) — non-string values pass through unchanged
+// so `z.enum`'s own type error still fires for those, and `undefined`
+// still reaches `.default('postgres')` below rather than becoming the
+// string "undefined".
+const normalizedDataEngine = z.preprocess(
+  (val) => (typeof val === 'string' ? val.trim().toLowerCase() : val),
+  z.enum(DATA_ENGINES),
+);
+
 const baseEnvSchema = z.object({
   CLOUD_PROVIDER: z.enum(CLOUD_PROVIDERS).default('local'),
-  DATA_ENGINE: z.enum(DATA_ENGINES).default('postgres'),
+  DATA_ENGINE: normalizedDataEngine.default('postgres'),
   COMPUTE_RUNNER: z.enum(COMPUTE_RUNNERS).default('local'),
 
   POSTGRES_DB: z.string().min(1).optional(),

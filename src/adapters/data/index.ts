@@ -37,7 +37,15 @@ export type {
   SortOptions,
   TransactionContext,
 } from './types.js';
-export { createDataAdapter, dataAdapterRegistry, type RepositoryFactory } from './factory.js';
+export { createDataAdapter } from './factory.js';
+export {
+  buildDataAdapterConfig,
+  DEFAULT_CONNECTION_TIMEOUT_MS,
+  DEFAULT_HEALTH_CHECK_TIMEOUT_MS,
+  DEFAULT_POOL_SIZE,
+  type DataAdapterConfig,
+} from './types/DataAdapterConfig.js';
+export { type DataAdapterContext, type DataAdapterRepositories } from './types/DataAdapterContext.js';
 export { MongooseAgentJobRepository } from './mongoose/MongooseAgentJobRepository.js';
 export { MongooseDriftEventRepository } from './mongoose/MongooseDriftEventRepository.js';
 export { MongooseEmbeddedArrayRepository } from './mongoose/MongooseEmbeddedArrayRepository.js';
