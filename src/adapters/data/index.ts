@@ -5,6 +5,7 @@ export {
   type DataErrorCode,
   DuplicateKeyError,
   EntityNotFoundError,
+  ForeignKeyViolationError,
   TransactionError,
   ValidationError,
 } from './errors.js';
@@ -37,4 +38,10 @@ export type {
   TransactionContext,
 } from './types.js';
 export { createDataAdapter, dataAdapterRegistry, type RepositoryFactory } from './factory.js';
+export { PrismaAgentJobRepository } from './prisma/PrismaAgentJobRepository.js';
+export {
+  type DelegateResolver,
+  type PrismaModelDelegate,
+  PrismaRepository,
+} from './prisma/PrismaRepository.js';
 export { StubRepository } from './stubs/stub-repository.js';
