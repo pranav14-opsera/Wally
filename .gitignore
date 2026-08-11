@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.local
+*.log
+.DS_Store
+Thumbs.db
+secrets/
+.forge-commit-ready
+.forge/project-id
+.forge/hook-version
+.forge/changed-files.log
+.claude/hooks/

@@ -1,0 +1,27 @@
+{
+  "name": "wally",
+  "version": "0.1.0",
+  "description": "Wally — Walmart Tool Integration Platform",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint 'src/**/*.ts' --no-error-on-unmatched-pattern",
+    "lint:fix": "eslint 'src/**/*.ts' --fix --no-error-on-unmatched-pattern",
+    "build": "tsc",
+    "test:unit": "echo 'Unit tests not yet configured'",
+    "test:integration": "echo 'Integration tests not yet configured'",
+    "test:contract": "echo 'Contract tests not yet configured'",
+    "test:e2e": "echo 'E2E tests not yet configured'"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.0.0"
+  }
+}
