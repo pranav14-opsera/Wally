@@ -32,6 +32,7 @@ export {
   createCloudStorageAdapter,
 } from './factory.js';
 export { S3StorageAdapter } from './aws/S3StorageAdapter.js';
+export { SecretsManagerAdapter } from './aws/SecretsManagerAdapter.js';
 export { AzureComputeStub } from './azure/AzureComputeStub.js';
 export { AzureSecretsStub } from './azure/AzureSecretsStub.js';
 export { AzureStorageStub } from './azure/AzureStorageStub.js';

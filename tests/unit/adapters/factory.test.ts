@@ -23,6 +23,7 @@ import {
   LocalComputeRunner,
   LocalSecretsAdapter,
   S3StorageAdapter,
+  SecretsManagerAdapter,
   StubStorageAdapter,
 } from '../../../src/adapters/cloud/index.js';
 import { buildDataAdapterConfig, ConnectionError, createDataAdapter } from '../../../src/adapters/data/index.js';
@@ -75,6 +76,10 @@ describe('cloud adapter factories', () => {
     expect(createCloudSecretsAdapter('local')).toBeInstanceOf(LocalSecretsAdapter);
   });
 
+  it("createCloudSecretsAdapter('aws') returns a SecretsManagerAdapter (WO-019)", () => {
+    expect(createCloudSecretsAdapter('aws')).toBeInstanceOf(SecretsManagerAdapter);
+  });
+
   it("createCloudComputeAdapter('local') returns a LocalComputeRunner", () => {
     expect(createCloudComputeAdapter('local')).toBeInstanceOf(LocalComputeRunner);
   });
@@ -99,12 +104,11 @@ describe('cloud adapter factories', () => {
   });
 
   it('throws AdapterNotRegisteredError with the requested value and available list for a truly unregistered provider', () => {
-    // 'aws' secrets/compute are deliberately unregistered until
-    // WO-019/WO-020 land (see factory.ts's comments on those registries) —
-    // a real, already-designed-for gap, not a bug this test should hide.
+    // 'aws' compute (ECSComputeRunner, WO-020) is the one gap still open —
+    // local/aws/gcp/azure are all registered for storage and secrets now.
     let thrown: Error | undefined;
     try {
-      cloudSecretsRegistry.resolve('aws');
+      createCloudComputeAdapter('aws');
     } catch (error) {
       thrown = error as Error;
     }
@@ -123,15 +127,15 @@ describe('cloud adapter factories', () => {
       expect(adapters.compute).toBeInstanceOf(LocalComputeRunner);
     });
 
-    it('CLOUD_PROVIDER=aws throws AdapterNotRegisteredError resolving secrets — SecretsManagerAdapter (WO-019) not yet registered', () => {
-      // storage/compute resolve fine for 'aws' (S3StorageAdapter exists;
+    it('CLOUD_PROVIDER=aws returns S3StorageAdapter, SecretsManagerAdapter, and (with COMPUTE_RUNNER=local) LocalComputeRunner', () => {
       // COMPUTE_RUNNER=local overrides compute to LocalComputeRunner
-      // regardless) — it's specifically the secrets slot that has no
-      // registered 'aws' entry yet, so createCloudAdapters() as a whole
-      // throws while building the returned object.
-      expect(() => createCloudAdapters({ cloudProvider: 'aws', computeRunner: 'local' })).toThrow(
-        AdapterNotRegisteredError,
-      );
+      // regardless of CLOUD_PROVIDER — ECSComputeRunner (WO-020) is the
+      // one still-unregistered 'aws' slot, asserted separately above.
+      const adapters = createCloudAdapters({ cloudProvider: 'aws', computeRunner: 'local' });
+
+      expect(adapters.storage).toBeInstanceOf(S3StorageAdapter);
+      expect(adapters.secrets).toBeInstanceOf(SecretsManagerAdapter);
+      expect(adapters.compute).toBeInstanceOf(LocalComputeRunner);
     });
 
     it('CLOUD_PROVIDER=gcp returns all three GCP stubs', () => {
@@ -163,12 +167,7 @@ describe('cloud adapter factories', () => {
     });
 
     it('COMPUTE_RUNNER=local always selects LocalComputeRunner regardless of CLOUD_PROVIDER', () => {
-      // 'aws' is excluded here: its secrets slot isn't registered yet
-      // (WO-019), so createCloudAdapters('aws') throws before compute
-      // selection can even be observed — that gap is asserted on its own
-      // above. The compute-override rule itself is provider-agnostic and
-      // is fully exercised by the other three providers.
-      for (const cloudProvider of ['local', 'gcp', 'azure'] as const) {
+      for (const cloudProvider of ['local', 'aws', 'gcp', 'azure'] as const) {
         const adapters = createCloudAdapters({ cloudProvider, computeRunner: 'local' });
         expect(adapters.compute).toBeInstanceOf(LocalComputeRunner);
       }

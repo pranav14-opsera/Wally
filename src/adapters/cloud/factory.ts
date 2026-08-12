@@ -8,6 +8,7 @@ import type { CloudProvider, ComputeRunner } from '../../config/schema.js';
 import { createLogger } from '../../logging/index.js';
 import { AdapterNotRegisteredError } from '../errors.js';
 import { S3StorageAdapter } from './aws/S3StorageAdapter.js';
+import { SecretsManagerAdapter } from './aws/SecretsManagerAdapter.js';
 import { AzureComputeStub } from './azure/AzureComputeStub.js';
 import { AzureSecretsStub } from './azure/AzureSecretsStub.js';
 import { AzureStorageStub } from './azure/AzureStorageStub.js';
@@ -78,11 +79,19 @@ cloudSecretsRegistry.register(
   'local',
   () => new LocalSecretsAdapter(getConfig().SECRETS_LOCAL_PATH, 'LOCAL_SECRETS_MASTER_KEY', createLogger('LocalSecretsAdapter')),
 );
-// No 'aws' entry yet — SecretsManagerAdapter (WO-019) is a separate,
-// still-in-progress work order. Resolving 'aws' here throws
-// AdapterNotRegisteredError (a clear, already-designed-for failure mode —
-// see that error's own doc comment) until WO-019 registers it; no change
-// to this factory will be needed when it lands.
+// Real implementation (WO-019) — the AWS-production counterpart to
+// LocalSecretsAdapter above. No client is passed here: SecretsManagerAdapter's
+// own constructor defaults to `new SecretsManagerClient({})`, letting the
+// AWS SDK's default provider chain resolve region/credentials itself.
+cloudSecretsRegistry.register(
+  'aws',
+  () =>
+    new SecretsManagerAdapter(
+      getConfig().SECRETS_NAMESPACE,
+      getConfig().SECRETS_FORCE_DELETE_WITHOUT_RECOVERY,
+      createLogger('SecretsManagerAdapter'),
+    ),
+);
 cloudSecretsRegistry.register('gcp', () => new GcpSecretsStub());
 cloudSecretsRegistry.register('azure', () => new AzureSecretsStub());
 

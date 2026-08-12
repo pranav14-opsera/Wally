@@ -206,7 +206,7 @@ describe('bootstrap', () => {
     expect(container.cloudSecrets.constructor.name).toBe('GcpSecretsStub');
   });
 
-  it('with CLOUD_PROVIDER=aws, cloudStorage resolves (S3StorageAdapter) but bootstrap still fails at the next unregistered step (cloudSecrets — AWS support lands in WO-019)', async () => {
+  it('with CLOUD_PROVIDER=aws, bootstrap resolves S3StorageAdapter and SecretsManagerAdapter (WO-019)', async () => {
     process.env = {
       ...ORIGINAL_ENV,
       ...VALID_ENV,
@@ -216,6 +216,9 @@ describe('bootstrap', () => {
     };
     const { bootstrap } = await import('../../../src/bootstrap.js');
 
-    await expect(bootstrap()).rejects.toThrow(/No cloud secrets adapter registered for "aws"/);
+    const container = await bootstrap();
+
+    expect(container.cloudStorage.constructor.name).toBe('S3StorageAdapter');
+    expect(container.cloudSecrets.constructor.name).toBe('SecretsManagerAdapter');
   });
 });

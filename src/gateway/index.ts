@@ -1,1 +1,2 @@
-export type { IGatewayPlugin } from './types.js';
+export { buildApp } from './app.js';
+export type { GatewayContainer, IGatewayPlugin } from './types.js';

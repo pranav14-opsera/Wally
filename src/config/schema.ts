@@ -62,6 +62,12 @@ const baseEnvSchema = z.object({
   LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
   NODE_ENV: z.string().default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
+  HOST: z.string().min(1).default('0.0.0.0'),
+
+  // Gateway graceful shutdown (WO-035) — how long `server.ts` waits for
+  // Fastify to drain in-flight requests (`app.close()`) before it stops
+  // waiting and lets the process exit anyway.
+  SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
 
   // Base directory for FilesystemStorageAdapter (CLOUD_PROVIDER=local).
   // Only meaningful for the local provider, so it has a default rather
@@ -87,6 +93,74 @@ const baseEnvSchema = z.object({
   // later WO under REQ-009's data retention work) reading this same
   // value — one config field, not a per-engine duplicate.
   AUDIT_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(365),
+
+  // SecretsManagerAdapter (CLOUD_PROVIDER=aws, WO-019) — a safe default
+  // rather than a conditional-required check, same rationale as
+  // STORAGE_LOCAL_PATH/SECRETS_LOCAL_PATH: harmless to have a value even
+  // when CLOUD_PROVIDER=local, and it's the namespace *prefix* itself
+  // that's the meaningful configuration, not its mere presence.
+  SECRETS_NAMESPACE: z.string().min(1).default('wally/'),
+  // "true"/"false" strings, not z.coerce.boolean() — that coerces via
+  // JS's `Boolean(str)`, under which the string "false" is truthy (any
+  // non-empty string is), which would make SECRETS_FORCE_DELETE_WITHOUT_RECOVERY=false
+  // silently mean true. Defaults to false: skipping Secrets Manager's
+  // recovery window is destructive and must be opted into explicitly.
+  SECRETS_FORCE_DELETE_WITHOUT_RECOVERY: z.preprocess(
+    (val) => (typeof val === 'string' ? val.trim().toLowerCase() === 'true' : val),
+    z.boolean(),
+  ).default(false),
+
+  // Gateway CORS (WO-037) — comma-separated list, parsed by the CORS
+  // plugin itself (this field stays the raw string so the plugin owns
+  // trimming/normalizing each origin, not duplicated validation logic here).
+  CORS_ALLOWED_ORIGINS: z.string().min(1).default('http://localhost:5173'),
+
+  // Gateway security headers (WO-038) — raw CSP override string, parsed
+  // by the security-headers plugin. Left as a plain string (not
+  // structured here) because @fastify/helmet's CSP directive shape is
+  // that plugin's concern, not config's.
+  CSP_DIRECTIVES: z.string().optional(),
+
+  // Gateway auth (WO-042) — bcrypt cost factor for password hashing.
+  BCRYPT_SALT_ROUNDS: z.coerce.number().int().positive().default(12),
+
+  // Gateway auth (WO-042) — minimum accepted login password length.
+  // Defaults to a real complexity floor; only ever lower this in a local,
+  // gitignored .env for a personal dev instance — never in committed config.
+  AUTH_MIN_PASSWORD_LENGTH: z.coerce.number().int().positive().default(12),
+
+  // Gateway health checks (WO-046) — per-dependency timeout for /api/v1/health/ready.
+  HEALTH_CHECK_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
+
+  // Load Testing Agent (WO-093/096) — profile validation bounds and k6
+  // run progress-heartbeat interval. Config-driven per the zero-hardcoding
+  // policy (src/agents/** may not contain bare numeric literals — RULES.md).
+  LOADTEST_NAME_MAX_LENGTH: z.coerce.number().int().positive().default(100),
+  LOADTEST_MAX_VUS: z.coerce.number().int().positive().default(1_000),
+  LOADTEST_MAX_DURATION_SECONDS: z.coerce.number().int().positive().default(3_600),
+  LOADTEST_DEFAULT_VUS: z.coerce.number().int().positive().default(10),
+  LOADTEST_DEFAULT_DURATION_SECONDS: z.coerce.number().int().positive().default(30),
+  LOADTEST_DEFAULT_P95_THRESHOLD_MS: z.coerce.number().positive().default(500),
+  LOADTEST_DEFAULT_ERROR_RATE_PCT: z.coerce.number().min(0).max(100).default(1),
+  LOADTEST_PROGRESS_INTERVAL_MS: z.coerce.number().int().positive().default(2_000),
+  LOADTEST_STDERR_TAIL_LENGTH: z.coerce.number().int().positive().default(2_000),
+
+  // BaseAgent (all agents) — floor on how long any single step takes
+  // before it's marked completed, even if the underlying work finished
+  // faster. Purely a demo/UX pacing knob (steps like "validate profile"
+  // finish in a few ms; without a floor, agent runs feel like an instant
+  // flash to "completed" rather than a visible, step-by-step analysis).
+  AGENT_MIN_STEP_DURATION_MS: z.coerce.number().int().nonnegative().default(1_500),
+
+  // Integration Agent / API Lifecycle Agent (WO-069/WO-100) — real
+  // OpenAPI-spec fetch/parse bounds.
+  TOOL_NAME_MAX_LENGTH: z.coerce.number().int().positive().default(100),
+  SPEC_API_KEY_MAX_LENGTH: z.coerce.number().int().positive().default(200),
+  SPEC_FETCH_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
+  SPEC_MAX_ENDPOINTS_TO_SHOW: z.coerce.number().int().positive().default(20),
+  SPEC_SUMMARY_MAX_LENGTH: z.coerce.number().int().positive().default(140),
+  SPEC_RESPONSE_SHAPE_MAX_FIELDS: z.coerce.number().int().positive().default(10),
+  API_LIFECYCLE_MAX_ENDPOINTS_TO_DIFF: z.coerce.number().int().positive().default(5_000),
 
   // RedisConnectionFactory (WO-030) — discrete host/port/password/db
   // fields, all defaulted for local development, per that WO's own AC
