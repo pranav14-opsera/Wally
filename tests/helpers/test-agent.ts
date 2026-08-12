@@ -1,12 +1,17 @@
 import type { Logger } from 'pino';
 
 import { BaseAgent } from '../../src/agents/base-agent.js';
+import { JobPersistence } from '../../src/agents/job-persistence.js';
+import { StepMemoizer } from '../../src/agents/memoization.js';
 import type { AgentStep } from '../../src/agents/types.js';
 import type { AgentJob } from '../../src/adapters/data/entities/AgentJob.js';
 import type { JobStep } from '../../src/adapters/data/entities/JobStep.js';
 import type { IRepository } from '../../src/adapters/data/interfaces/IRepository.js';
 import type { IRedisClient } from '../../src/adapters/redis/interfaces/IRedisClient.js';
 import type { AgentJobConfig } from '../../src/agents/types.js';
+
+const DEFAULT_TEST_TTL_SECONDS = 3_600;
+const DEFAULT_TEST_LARGE_RESULT_WARN_BYTES = 1_000_000;
 
 export interface TestAgentInput extends Record<string, unknown> {
   seed: number;
@@ -30,6 +35,14 @@ export class TestAgent extends BaseAgent<TestAgentInput, Record<string, unknown>
 
   private readonly steps: Array<AgentStep<TestAgentInput>>;
 
+  /**
+   * Takes raw repositories rather than a pre-built `JobPersistence` — so
+   * every existing call site from WO-029's test suite keeps working
+   * unchanged; `JobPersistence`/`StepMemoizer` are constructed here
+   * internally. Tests that need direct access to either (e.g. to seed a
+   * cache hit before calling `execute()`) build their own and pass a
+   * `StepMemoizer` via the `stepMemoizer` override param instead.
+   */
   public constructor(
     agentJobRepository: IRepository<AgentJob>,
     jobStepRepository: IRepository<JobStep>,
@@ -37,8 +50,9 @@ export class TestAgent extends BaseAgent<TestAgentInput, Record<string, unknown>
     logger: Logger,
     config: AgentJobConfig,
     steps: Array<AgentStep<TestAgentInput>> = buildDeterministicSteps(),
+    stepMemoizer: StepMemoizer = new StepMemoizer(redis, DEFAULT_TEST_TTL_SECONDS, logger, DEFAULT_TEST_LARGE_RESULT_WARN_BYTES),
   ) {
-    super(agentJobRepository, jobStepRepository, redis, logger, config);
+    super(new JobPersistence(agentJobRepository, jobStepRepository), stepMemoizer, redis, logger, config);
     this.steps = steps;
   }
 

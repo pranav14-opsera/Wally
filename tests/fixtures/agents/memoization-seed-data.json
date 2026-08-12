@@ -1,0 +1,8 @@
+{
+  "jobId": "job-memoization-fixture-1",
+  "cachedSteps": [
+    { "stepOrder": 0, "result": 4 },
+    { "stepOrder": 1, "result": 8 },
+    { "stepOrder": 2, "result": { "total": 8 } }
+  ]
+}

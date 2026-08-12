@@ -1,15 +1,16 @@
 import pino from 'pino';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AgentJob } from '../../../src/adapters/data/entities/AgentJob.js';
 import type { JobStep } from '../../../src/adapters/data/entities/JobStep.js';
 import { StubRepository } from '../../../src/adapters/data/stubs/stub-repository.js';
 import { DuplicateStepNameError, InvalidStateTransitionError, StepExecutionError } from '../../../src/agents/errors.js';
+import { StepMemoizer } from '../../../src/agents/memoization.js';
 import type { AgentJobConfig } from '../../../src/agents/types.js';
 import expectedFinalResult from '../../fixtures/agents/expected-final-result.json';
 import expectedStepOutputs from '../../fixtures/agents/expected-step-outputs.json';
 import sampleJobInput from '../../fixtures/agents/sample-job-input.json';
-import { createMockRedis } from '../../helpers/mock-redis.js';
+import { createMockRedis, FakeRedisClient } from '../../helpers/mock-redis.js';
 import {
   buildAsyncFailingStep,
   buildDeterministicSteps,
@@ -17,6 +18,9 @@ import {
   TestAgent,
   type TestAgentInput,
 } from '../../helpers/test-agent.js';
+
+const TTL_SECONDS = 3_600;
+const LARGE_RESULT_WARN_BYTES = 1_000_000;
 
 const silentLogger = pino({ level: 'silent' });
 const CONFIG: AgentJobConfig = { agentType: 'integration', maxRetries: 3, timeoutMs: 30_000 };
@@ -270,6 +274,248 @@ describe('BaseAgent', () => {
 
       const result = await agent.execute(job.id, sampleJobInput as TestAgentInput);
       expect(result.status).toBe('completed');
+    });
+  });
+
+  describe('memoization / crash-resume (WO-031)', () => {
+    it('a cache hit skips the step handler and does not create a new JobStep record', async () => {
+      const job = await seedJob(agentJobRepository);
+      const redis = new FakeRedisClient();
+      const memoizer = new StepMemoizer(redis, TTL_SECONDS, silentLogger, LARGE_RESULT_WARN_BYTES);
+
+      const stepASpy = vi.fn((ctx: { input: TestAgentInput }) => ctx.input.seed + 1);
+      const steps = [
+        { name: 'step-a', handler: stepASpy },
+        ...buildDeterministicSteps().slice(1),
+      ];
+
+      // Pre-seed the cache as if step-a already completed in a prior run.
+      await memoizer.setStepResult(job.id, 0, 4);
+
+      const agent = new TestAgent(agentJobRepository, jobStepRepository, redis, silentLogger, CONFIG, steps, memoizer);
+      const result = await agent.execute(job.id, sampleJobInput as TestAgentInput);
+
+      expect(stepASpy).not.toHaveBeenCalled();
+      expect(result.status).toBe('completed');
+      expect((result.data as Record<string, unknown>)['step-a']).toBe(4);
+
+      const { items: persistedSteps } = await jobStepRepository.findMany({ job_id: { operator: 'eq', value: job.id } });
+      expect(persistedSteps.find((s) => s.step_name === 'step-a')).toBeUndefined();
+    });
+
+    it('onStepComplete still fires for a cache-hit step, with the cached result', async () => {
+      const job = await seedJob(agentJobRepository);
+      const redis = new FakeRedisClient();
+      const memoizer = new StepMemoizer(redis, TTL_SECONDS, silentLogger, LARGE_RESULT_WARN_BYTES);
+      await memoizer.setStepResult(job.id, 0, 4);
+
+      const agent = new TestAgent(
+        agentJobRepository,
+        jobStepRepository,
+        redis,
+        silentLogger,
+        CONFIG,
+        buildDeterministicSteps(),
+        memoizer,
+      );
+      await agent.execute(job.id, sampleJobInput as TestAgentInput);
+
+      expect(agent.stepCompleteCalls[0]).toEqual({ stepName: 'step-a', result: 4 });
+    });
+
+    it('crash-resume: executing the same jobId a second time skips every previously-checkpointed step and runs only the rest', async () => {
+      const job = await seedJob(agentJobRepository);
+      const redis = new FakeRedisClient();
+      const memoizer = new StepMemoizer(redis, TTL_SECONDS, silentLogger, LARGE_RESULT_WARN_BYTES);
+
+      const callCounts = new Map<string, number>();
+      const countingSteps = buildDeterministicSteps().map((step) => ({
+        ...step,
+        handler: (ctx: Parameters<typeof step.handler>[0]) => {
+          callCounts.set(step.name, (callCounts.get(step.name) ?? 0) + 1);
+          return step.handler(ctx);
+        },
+      }));
+
+      // "Crash" after step-c: a 4th step that throws simulates the
+      // process dying mid-job — steps a/b/c already checkpointed via
+      // their own setStepResult call inside step() before this one runs.
+      const crashingSteps = [...countingSteps.slice(0, 3), buildFailingStep('crash-here'), countingSteps[3]!, countingSteps[4]!];
+      const crashedAgent = new TestAgent(
+        agentJobRepository,
+        jobStepRepository,
+        redis,
+        silentLogger,
+        CONFIG,
+        crashingSteps,
+        memoizer,
+      );
+      const firstResult = await crashedAgent.execute(job.id, sampleJobInput as TestAgentInput);
+      expect(firstResult.status).toBe('failed');
+      expect(callCounts.get('step-a')).toBe(1);
+      expect(callCounts.get('step-b')).toBe(1);
+      expect(callCounts.get('step-c')).toBe(1);
+
+      // A failed job is terminal (failed -> running is invalid) — reset
+      // status to simulate the queue re-enqueueing the same jobId, which
+      // is the realistic crash-resume trigger (BullMQ retry / manual
+      // requeue), not a direct second execute() call on a 'failed' row.
+      await agentJobRepository.update(job.id, { status: 'queued' });
+
+      const resumedAgent = new TestAgent(
+        agentJobRepository,
+        jobStepRepository,
+        redis,
+        silentLogger,
+        CONFIG,
+        countingSteps,
+        memoizer,
+      );
+      const secondResult = await resumedAgent.execute(job.id, sampleJobInput as TestAgentInput);
+
+      expect(secondResult.status).toBe('completed');
+      expect(secondResult.data).toEqual(expectedStepOutputs);
+      // step-a/b/c ran exactly once (in the first, "crashed" run) —
+      // the second run served them from cache instead of re-executing.
+      expect(callCounts.get('step-a')).toBe(1);
+      expect(callCounts.get('step-b')).toBe(1);
+      expect(callCounts.get('step-c')).toBe(1);
+      expect(callCounts.get('step-d')).toBe(1);
+      expect(callCounts.get('step-e')).toBe(1);
+    });
+
+    it('AgentJob.current_step reflects the true progress after a resumed run completes', async () => {
+      const job = await seedJob(agentJobRepository);
+      const redis = new FakeRedisClient();
+      const memoizer = new StepMemoizer(redis, TTL_SECONDS, silentLogger, LARGE_RESULT_WARN_BYTES);
+      await memoizer.setStepResult(job.id, 0, 4);
+      await memoizer.setStepResult(job.id, 1, 8);
+      await agentJobRepository.update(job.id, { status: 'paused' });
+
+      const agent = new TestAgent(
+        agentJobRepository,
+        jobStepRepository,
+        redis,
+        silentLogger,
+        CONFIG,
+        buildDeterministicSteps(),
+        memoizer,
+      );
+      await agent.execute(job.id, sampleJobInput as TestAgentInput);
+
+      const persisted = await agentJobRepository.findById(job.id);
+      expect(persisted?.current_step).toBe(5);
+    });
+
+    it('a TTL-expired checkpoint (simulated) causes a full re-execution from step 0, with a warning logged', async () => {
+      const job = await seedJob(agentJobRepository, { status: 'paused' });
+      const redis = new FakeRedisClient();
+      const memoizer = new StepMemoizer(redis, TTL_SECONDS, silentLogger, LARGE_RESULT_WARN_BYTES);
+      const warnSpy = vi.spyOn(silentLogger, 'warn');
+
+      const stepASpy = vi.fn((ctx: { input: TestAgentInput }) => ctx.input.seed + 1);
+      const steps = [{ name: 'step-a', handler: stepASpy }, ...buildDeterministicSteps().slice(1)];
+
+      const agent = new TestAgent(agentJobRepository, jobStepRepository, redis, silentLogger, CONFIG, steps, memoizer);
+      const result = await agent.execute(job.id, sampleJobInput as TestAgentInput);
+
+      expect(stepASpy).toHaveBeenCalledTimes(1);
+      expect(result.status).toBe('completed');
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ jobId: job.id }),
+        expect.stringContaining('no cached checkpoint'),
+      );
+    });
+  });
+
+  describe('pause() / resume() (WO-031)', () => {
+    it('pause() sets the paused flag; the running execute() loop stops after the in-flight step and persists status "paused"', async () => {
+      const job = await seedJob(agentJobRepository);
+      const redis = new FakeRedisClient();
+      const memoizer = new StepMemoizer(redis, TTL_SECONDS, silentLogger, LARGE_RESULT_WARN_BYTES);
+      const agent = new TestAgent(
+        agentJobRepository,
+        jobStepRepository,
+        redis,
+        silentLogger,
+        CONFIG,
+        [
+          {
+            name: 'step-a',
+            handler: async (ctx: { input: TestAgentInput }) => {
+              // Simulates an external pause() request arriving while
+              // step-a is in flight — the loop only honors it at the
+              // START of the NEXT iteration, never mid-step.
+              await agent.pause(job.id);
+              return ctx.input.seed + 1;
+            },
+          },
+          { name: 'step-b', handler: () => 'should-not-run' },
+        ],
+        memoizer,
+      );
+
+      const result = await agent.execute(job.id, sampleJobInput as TestAgentInput);
+
+      expect(result.status).toBe('paused');
+      const persisted = await agentJobRepository.findById(job.id);
+      expect(persisted?.status).toBe('paused');
+
+      const { items: steps } = await jobStepRepository.findMany({ job_id: { operator: 'eq', value: job.id } });
+      expect(steps.map((s) => s.step_name)).toEqual(['step-a']);
+    });
+
+    it('pause() on a job with no step currently executing still sets the flag (honored on the next execute() call)', async () => {
+      const job = await seedJob(agentJobRepository);
+      const redis = new FakeRedisClient();
+      const memoizer = new StepMemoizer(redis, TTL_SECONDS, silentLogger, LARGE_RESULT_WARN_BYTES);
+      const agent = new TestAgent(agentJobRepository, jobStepRepository, redis, silentLogger, CONFIG, buildDeterministicSteps(), memoizer);
+
+      await expect(agent.pause(job.id)).resolves.toBeUndefined();
+      await expect(memoizer.isPaused(job.id)).resolves.toBe(true);
+    });
+
+    it('pause() throws a descriptive error for an unknown jobId', async () => {
+      const redis = new FakeRedisClient();
+      const memoizer = new StepMemoizer(redis, TTL_SECONDS, silentLogger, LARGE_RESULT_WARN_BYTES);
+      const agent = new TestAgent(agentJobRepository, jobStepRepository, redis, silentLogger, CONFIG, buildDeterministicSteps(), memoizer);
+
+      await expect(agent.pause('does-not-exist')).rejects.toThrow(/does-not-exist/);
+    });
+
+    it('resume() completes a paused job, skipping steps already checkpointed', async () => {
+      const job = await seedJob(agentJobRepository, { status: 'paused' });
+      const redis = new FakeRedisClient();
+      const memoizer = new StepMemoizer(redis, TTL_SECONDS, silentLogger, LARGE_RESULT_WARN_BYTES);
+      await memoizer.setStepResult(job.id, 0, 4);
+
+      const stepASpy = vi.fn((ctx: { input: TestAgentInput }) => ctx.input.seed + 1);
+      const steps = [{ name: 'step-a', handler: stepASpy }, ...buildDeterministicSteps().slice(1)];
+      const agent = new TestAgent(agentJobRepository, jobStepRepository, redis, silentLogger, CONFIG, steps, memoizer);
+
+      const result = await agent.resume(job.id, sampleJobInput as TestAgentInput);
+
+      expect(stepASpy).not.toHaveBeenCalled();
+      expect(result.status).toBe('completed');
+    });
+
+    it('resume() rejects with InvalidStateTransitionError for a job that is not paused, even though the general state machine allows that transition', async () => {
+      const job = await seedJob(agentJobRepository, { status: 'queued' });
+      const redis = new FakeRedisClient();
+      const memoizer = new StepMemoizer(redis, TTL_SECONDS, silentLogger, LARGE_RESULT_WARN_BYTES);
+      const agent = new TestAgent(agentJobRepository, jobStepRepository, redis, silentLogger, CONFIG, buildDeterministicSteps(), memoizer);
+
+      await expect(agent.resume(job.id, sampleJobInput as TestAgentInput)).rejects.toBeInstanceOf(
+        InvalidStateTransitionError,
+      );
+    });
+
+    it('resume() throws a descriptive error for an unknown jobId', async () => {
+      const redis = new FakeRedisClient();
+      const memoizer = new StepMemoizer(redis, TTL_SECONDS, silentLogger, LARGE_RESULT_WARN_BYTES);
+      const agent = new TestAgent(agentJobRepository, jobStepRepository, redis, silentLogger, CONFIG, buildDeterministicSteps(), memoizer);
+
+      await expect(agent.resume('does-not-exist', sampleJobInput as TestAgentInput)).rejects.toThrow(/does-not-exist/);
     });
   });
 });

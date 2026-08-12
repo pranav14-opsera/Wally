@@ -8,15 +8,25 @@
  * constructs one is WO-030's scope (BullMQ Queues and Redis Connection
  * Management).
  *
- * Only the handful of primitives BaseAgent's known future consumers need
- * are declared here: WO-031 (step memoization/crash-resume) reads/writes
- * a value by key, WO-033 (SSE progress publishing) publishes to a
- * channel. Neither is called by BaseAgent itself yet (WO-029) — this
- * interface exists so the constructor's dependency-injection point
- * doesn't need a breaking change when either lands.
+ * WO-031 (step memoization/crash-resume) is the first real consumer:
+ * `get`/`set` (with the `'EX'` TTL form, matching ioredis's own overload
+ * so a real client satisfies this with no adapter glue) for the
+ * memoization cache, `multi` for the atomic step-result + checkpoint
+ * write. `publish` remains for WO-033 (SSE progress publishing), still
+ * unused by BaseAgent itself.
  */
 export interface IRedisClient {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<'OK'>;
+  set(key: string, value: string, mode: 'EX', ttlSeconds: number): Promise<'OK'>;
+  del(...keys: string[]): Promise<number>;
   publish(channel: string, message: string): Promise<number>;
+  /** Starts a MULTI transaction — `exec()` resolves `null` if the transaction was aborted (e.g. a watched key changed) rather than committed, per ioredis's own contract. */
+  multi(): IRedisMultiCommand;
+}
+
+export interface IRedisMultiCommand {
+  set(key: string, value: string): this;
+  set(key: string, value: string, mode: 'EX', ttlSeconds: number): this;
+  exec(): Promise<Array<[Error | null, unknown]> | null>;
 }

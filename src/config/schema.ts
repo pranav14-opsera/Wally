@@ -110,6 +110,13 @@ const baseEnvSchema = z.object({
   QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(5),
   QUEUE_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
   QUEUE_RATE_LIMIT_DURATION_MS: z.coerce.number().int().positive().default(1_000),
+
+  // StepMemoizer (WO-031) — TTL on cached step results/checkpoints in
+  // Redis. Default 86400s (24h) matches this WO's own technical_details.
+  JOB_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
+  // Step results larger than this still cache successfully but log a
+  // warning (WO-031 edge case). Default 1,000,000 bytes (~1MB).
+  MEMOIZATION_LARGE_RESULT_WARN_BYTES: z.coerce.number().int().positive().default(1_000_000),
 });
 
 function requireField(
