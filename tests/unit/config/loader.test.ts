@@ -111,6 +111,22 @@ describe('loadConfig', () => {
     expect(config.PORT).toBe(3000);
   });
 
+  it('applies sensible defaults for REDIS_HOST/PORT/PASSWORD/DB and QUEUE_* when omitted (WO-030)', () => {
+    const config = loadConfig(createMinimalLocalEnv());
+
+    expect(config.REDIS_HOST).toBe('localhost');
+    expect(config.REDIS_PORT).toBe(6379);
+    expect(config.REDIS_PASSWORD).toBe('');
+    expect(config.REDIS_DB).toBe(0);
+    expect(config.QUEUE_CONCURRENCY).toBe(5);
+    expect(config.QUEUE_JOB_ATTEMPTS).toBe(5);
+  });
+
+  it('throws a descriptive error naming REDIS_PORT for a non-numeric or out-of-range value', () => {
+    expect(() => loadConfig(createValidPostgresEnv({ REDIS_PORT: 'not-a-number' }))).toThrowError(/REDIS_PORT/);
+    expect(() => loadConfig(createValidPostgresEnv({ REDIS_PORT: '70000' }))).toThrowError(/REDIS_PORT/);
+  });
+
   it('coerces PORT and POSTGRES_PORT from string to number', () => {
     const config = loadConfig(createValidPostgresEnv({ PORT: '8080', POSTGRES_PORT: '5433' }));
 

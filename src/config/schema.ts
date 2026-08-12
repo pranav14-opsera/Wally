@@ -43,6 +43,11 @@ const baseEnvSchema = z.object({
   MONGO_URI: z.string().min(1).optional(),
   MONGO_INITDB_DATABASE: z.string().min(1).optional(),
 
+  // REDIS_URL predates WO-030's queue infrastructure and remains required
+  // for backward compatibility with existing tests/consumers; the queue
+  // module (src/queue/**) uses the discrete REDIS_HOST/PORT/PASSWORD/DB
+  // fields below instead, per WO-030's own AC — the two are independent,
+  // not derived from one another.
   REDIS_URL: z.string().min(1),
   JWT_PRIVATE_KEY_PATH: z.string().min(1),
   JWT_PUBLIC_KEY_PATH: z.string().min(1),
@@ -82,6 +87,29 @@ const baseEnvSchema = z.object({
   // later WO under REQ-009's data retention work) reading this same
   // value — one config field, not a per-engine duplicate.
   AUDIT_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(365),
+
+  // RedisConnectionFactory (WO-030) — discrete host/port/password/db
+  // fields, all defaulted for local development, per that WO's own AC
+  // ("sensible defaults"). Independent of REDIS_URL above.
+  REDIS_HOST: z.string().min(1).default('localhost'),
+  REDIS_PORT: z.coerce.number().int().positive().max(65_535).default(6379),
+  // '' (the default) and "no password configured" are the same thing —
+  // RedisConnectionFactory treats an empty string as no-auth, matching
+  // WO-030's edge case ("REDIS_PASSWORD empty string vs undefined must
+  // both mean no-auth").
+  REDIS_PASSWORD: z.string().default(''),
+  REDIS_DB: z.coerce.number().int().nonnegative().default(0),
+  REDIS_MAX_RETRIES: z.coerce.number().int().nonnegative().default(10),
+  REDIS_RETRY_DELAY_MS: z.coerce.number().int().positive().default(1_000),
+
+  // QueueManager (WO-030) — BullMQ defaultJobOptions and the rate-limiter
+  // values a later WO's Worker will apply (BullMQ rate limiting is a
+  // Worker-level option, not a Queue-level one).
+  QUEUE_JOB_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  QUEUE_BACKOFF_DELAY_MS: z.coerce.number().int().positive().default(1_000),
+  QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(5),
+  QUEUE_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
+  QUEUE_RATE_LIMIT_DURATION_MS: z.coerce.number().int().positive().default(1_000),
 });
 
 function requireField(
