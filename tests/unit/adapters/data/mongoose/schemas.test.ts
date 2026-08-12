@@ -191,17 +191,35 @@ describe('DriftEvent subdocument schema', () => {
 });
 
 describe('ToolRegistry schema', () => {
-  it('requires name, description, and endpoints', async () => {
+  it('requires name, type, base_url, auth_type, and endpoints', async () => {
     const ToolRegistryModel = mongoose.model('SchemaTest_ToolRegistry', toolRegistrySchema);
     const errors = await validationErrorsOf(new ToolRegistryModel({}));
     expect(errors?.name).toBeDefined();
-    expect(errors?.description).toBeDefined();
+    expect(errors?.type).toBeDefined();
+    expect(errors?.base_url).toBeDefined();
+    expect(errors?.auth_type).toBeDefined();
     expect(errors?.endpoints).toBeDefined();
+  });
+
+  // description is optional (WO-023) — omitting it must not produce a
+  // validation error, unlike the required fields above.
+  it('does not require description', async () => {
+    const ToolRegistryModel = mongoose.model('SchemaTest_ToolRegistryNoDescription', toolRegistrySchema);
+    const errors = await validationErrorsOf(
+      new ToolRegistryModel({ name: 'x', type: 'rest_api', base_url: 'https://example.com', auth_type: 'none', endpoints: [] }),
+    );
+    expect(errors?.description).toBeUndefined();
   });
 
   it('defaults health_status to unknown', () => {
     const ToolRegistryModel = mongoose.model('SchemaTest_ToolRegistry2', toolRegistrySchema);
-    const doc = new ToolRegistryModel({ name: 'x', description: 'y', endpoints: {} });
+    const doc = new ToolRegistryModel({
+      name: 'x',
+      type: 'rest_api',
+      base_url: 'https://example.com',
+      auth_type: 'none',
+      endpoints: [],
+    });
     expect(doc.health_status).toBe('unknown');
   });
 
