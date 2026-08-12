@@ -12,6 +12,7 @@
     "lint": "eslint \"src/**/*.ts\" --no-error-on-unmatched-pattern",
     "lint:fix": "eslint \"src/**/*.ts\" --fix --no-error-on-unmatched-pattern",
     "build": "tsc",
+    "start:worker": "node --max-old-space-size=2048 dist/workers/worker-entrypoint.js",
     "test:unit": "vitest run --config vitest.config.unit.ts",
     "test:integration": "vitest run --config vitest.config.integration.ts",
     "test:contract": "bash scripts/run-contract-tests.sh",
