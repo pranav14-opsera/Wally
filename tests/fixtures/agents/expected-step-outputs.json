@@ -1,0 +1,6 @@
+{
+  "step-a": 4,
+  "step-b": 8,
+  "step-c": { "total": 8 },
+  "step-d": "total-was-8"
+}

@@ -43,10 +43,21 @@ const baseEnvSchema = z.object({
   MONGO_URI: z.string().min(1).optional(),
   MONGO_INITDB_DATABASE: z.string().min(1).optional(),
 
+  // REDIS_URL predates WO-030's queue infrastructure and remains required
+  // for backward compatibility with existing tests/consumers; the queue
+  // module (src/queue/**) uses the discrete REDIS_HOST/PORT/PASSWORD/DB
+  // fields below instead, per WO-030's own AC — the two are independent,
+  // not derived from one another.
   REDIS_URL: z.string().min(1),
   JWT_PRIVATE_KEY_PATH: z.string().min(1),
   JWT_PUBLIC_KEY_PATH: z.string().min(1),
   LOCAL_SECRETS_MASTER_KEY: z.string().min(1).optional(),
+
+  // S3StorageAdapter (CLOUD_PROVIDER=aws). AWS credentials themselves are
+  // NOT a config field here — the SDK's default credential provider chain
+  // (IAM role / env vars / shared credentials file) resolves those.
+  S3_BUCKET_NAME: z.string().min(1).optional(),
+  AWS_REGION: z.string().min(1).optional(),
 
   LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
   NODE_ENV: z.string().default('development'),
@@ -150,6 +161,45 @@ const baseEnvSchema = z.object({
   SPEC_SUMMARY_MAX_LENGTH: z.coerce.number().int().positive().default(140),
   SPEC_RESPONSE_SHAPE_MAX_FIELDS: z.coerce.number().int().positive().default(10),
   API_LIFECYCLE_MAX_ENDPOINTS_TO_DIFF: z.coerce.number().int().positive().default(5_000),
+
+  // RedisConnectionFactory (WO-030) — discrete host/port/password/db
+  // fields, all defaulted for local development, per that WO's own AC
+  // ("sensible defaults"). Independent of REDIS_URL above.
+  REDIS_HOST: z.string().min(1).default('localhost'),
+  REDIS_PORT: z.coerce.number().int().positive().max(65_535).default(6379),
+  // '' (the default) and "no password configured" are the same thing —
+  // RedisConnectionFactory treats an empty string as no-auth, matching
+  // WO-030's edge case ("REDIS_PASSWORD empty string vs undefined must
+  // both mean no-auth").
+  REDIS_PASSWORD: z.string().default(''),
+  REDIS_DB: z.coerce.number().int().nonnegative().default(0),
+  REDIS_MAX_RETRIES: z.coerce.number().int().nonnegative().default(10),
+  REDIS_RETRY_DELAY_MS: z.coerce.number().int().positive().default(1_000),
+
+  // QueueManager (WO-030) — BullMQ defaultJobOptions and the rate-limiter
+  // values a later WO's Worker will apply (BullMQ rate limiting is a
+  // Worker-level option, not a Queue-level one).
+  QUEUE_JOB_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  QUEUE_BACKOFF_DELAY_MS: z.coerce.number().int().positive().default(1_000),
+  QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(5),
+  QUEUE_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
+  QUEUE_RATE_LIMIT_DURATION_MS: z.coerce.number().int().positive().default(1_000),
+
+  // StepMemoizer (WO-031) — TTL on cached step results/checkpoints in
+  // Redis. Default 86400s (24h) matches this WO's own technical_details.
+  JOB_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
+  // Step results larger than this still cache successfully but log a
+  // warning (WO-031 edge case). Default 1,000,000 bytes (~1MB).
+  MEMOIZATION_LARGE_RESULT_WARN_BYTES: z.coerce.number().int().positive().default(1_000_000),
+
+  // Worker process (WO-032). Concurrency and the DLQ-routing retry count
+  // reuse QUEUE_CONCURRENCY/QUEUE_JOB_ATTEMPTS above rather than
+  // duplicating them — those fields were added in WO-030 specifically
+  // "for a later WO's Worker to apply".
+  WORKER_LOCK_DURATION_MS: z.coerce.number().int().positive().default(60_000),
+  WORKER_STALLED_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
+  WORKER_DRAIN_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  WORKER_HEALTH_PORT: z.coerce.number().int().positive().max(65_535).default(9_090),
 });
 
 function requireField(
@@ -201,6 +251,11 @@ export const envSchema = baseEnvSchema.superRefine((env, ctx) => {
         message: `Must be at least ${LOCAL_SECRETS_MASTER_KEY_MIN_LENGTH} characters (AES-256 key material) when CLOUD_PROVIDER=local`,
       });
     }
+  }
+
+  if (env.CLOUD_PROVIDER === 'aws') {
+    requireField(ctx, env.S3_BUCKET_NAME, 'S3_BUCKET_NAME', 'Required when CLOUD_PROVIDER=aws');
+    requireField(ctx, env.AWS_REGION, 'AWS_REGION', 'Required when CLOUD_PROVIDER=aws');
   }
 });
 

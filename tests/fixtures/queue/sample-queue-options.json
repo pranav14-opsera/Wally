@@ -1,0 +1,7 @@
+{
+  "concurrency": 5,
+  "jobAttempts": 5,
+  "backoffDelayMs": 1000,
+  "rateLimitMax": 100,
+  "rateLimitDurationMs": 1000
+}

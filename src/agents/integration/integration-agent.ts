@@ -152,8 +152,10 @@ export class IntegrationAgent extends BaseAgent<IntegrationContext> {
     const entry = await this.deps.toolRegistry.create({
       name: this.discovered.displayName,
       description: `Auto-discovered from ${this.discovered.specUrl}`,
-      spec_url: this.discovered.specUrl,
-      endpoints: { items: this.discovered.endpoints, totalCount: this.discovered.totalEndpointCount },
+      type: 'rest_api',
+      base_url: new URL(this.discovered.specUrl).origin,
+      auth_type: 'api_key',
+      endpoints: this.discovered.endpoints as unknown as Array<Record<string, unknown>>,
       credential_ref: `integration/${this.discovered.toolName.trim().toLowerCase().replaceAll(/[^a-z0-9]+/g, '-')}/api-key`,
       health_status: this.liveTest.attempted && this.liveTest.statusCode && this.liveTest.statusCode < 400 ? 'healthy' : 'unknown',
       last_health_check: this.liveTest.attempted ? new Date() : null,

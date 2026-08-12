@@ -185,18 +185,40 @@ describe('bootstrap', () => {
     expect(container.config.CLOUD_PROVIDER).toBe('local');
   });
 
-  it('fails with adapter-registration context when config selects a valid but unregistered provider', async () => {
-    // CLOUD_PROVIDER=aws passes config validation (it's a valid enum value)
-    // but has no registered cloud storage adapter yet — this is the
-    // "partial initialization failure" edge case: cloudStorage is the
-    // first adapter bootstrap resolves, so it must fail there specifically.
+  it('resolves all three adapters via their stub implementations when config selects CLOUD_PROVIDER=gcp (WO-021/WO-022)', async () => {
+    // CLOUD_PROVIDER=gcp passes config validation and now has all three
+    // cloud adapters registered (GcpStorageStub/GcpSecretsStub/
+    // GcpComputeStub, WO-021) — bootstrap() itself only *constructs* the
+    // adapters and calls their optional `init()` hooks, neither of which
+    // any stub method touches, so bootstrap succeeds even though every
+    // other method on these adapters throws ProviderNotImplementedError
+    // if actually called later.
+    process.env = {
+      ...ORIGINAL_ENV,
+      ...VALID_ENV,
+      CLOUD_PROVIDER: 'gcp',
+    };
+    const { bootstrap } = await import('../../../src/bootstrap.js');
+
+    const container = await bootstrap();
+
+    expect(container.cloudStorage.constructor.name).toBe('GcpStorageStub');
+    expect(container.cloudSecrets.constructor.name).toBe('GcpSecretsStub');
+  });
+
+  it('with CLOUD_PROVIDER=aws, bootstrap resolves S3StorageAdapter and SecretsManagerAdapter (WO-019)', async () => {
     process.env = {
       ...ORIGINAL_ENV,
       ...VALID_ENV,
       CLOUD_PROVIDER: 'aws',
+      S3_BUCKET_NAME: 'wally-bootstrap-test-bucket',
+      AWS_REGION: 'us-east-1',
     };
     const { bootstrap } = await import('../../../src/bootstrap.js');
 
-    await expect(bootstrap()).rejects.toThrow(/No cloud storage adapter registered for "aws"/);
+    const container = await bootstrap();
+
+    expect(container.cloudStorage.constructor.name).toBe('S3StorageAdapter');
+    expect(container.cloudSecrets.constructor.name).toBe('SecretsManagerAdapter');
   });
 });

@@ -125,8 +125,10 @@ model JobStep {
 model ToolRegistry {
   id                String    @id @default(uuid()) @db.Uuid
   name              String    @unique
-  description       String
-  spec_url          String?
+  description       String?
+  type              String
+  base_url          String
+  auth_type         String
   endpoints         Json
   credential_ref    String?
   health_status     String    @default("unknown")
@@ -140,7 +142,7 @@ model ToolRegistry {
 model MetricRegistry {
   id            String   @id @default(uuid()) @db.Uuid
   name          String   @unique
-  description   String
+  description   String?
   source_query  String
   dashboard_ref String?
   thresholds    Json

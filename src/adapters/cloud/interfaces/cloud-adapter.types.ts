@@ -73,14 +73,20 @@ export type CloudErrorCode =
   | 'TASK_NOT_FOUND'
   | 'TASK_TIMEOUT'
   | 'TASK_FAILED'
-  // AWS-adapter-specific codes (WO-019) — distinct from the generic
-  // PROVIDER_ERROR fallback because callers need to distinguish "the AWS
-  // credential chain has nothing to offer" (a boot-time misconfiguration,
-  // same spirit as MASTER_KEY_MISSING for the local adapter) and "AWS is
-  // asking us to slow down" (transient, worth a backoff-and-retry) from
-  // "AWS Secrets Manager itself returned an unclassified failure".
+  // Shared AWS-adapter code (S3StorageAdapter WO-018, SecretsManagerAdapter
+  // WO-019) — a boot-time misconfiguration (missing bucket/region, empty
+  // credential chain), same spirit as MASTER_KEY_MISSING for the local
+  // adapter.
   | 'CONFIGURATION_ERROR'
-  | 'RATE_LIMITED';
+  // SecretsManagerAdapter-specific (WO-019) — AWS asking us to slow down;
+  // transient, worth a backoff-and-retry, distinct from an unclassified
+  // PROVIDER_ERROR.
+  | 'RATE_LIMITED'
+  // S3StorageAdapter-specific (WO-018) — a network timeout, which has no
+  // local-filesystem equivalent so doesn't collide with the conformance
+  // goal that FilesystemStorageAdapter/S3StorageAdapter stay behaviorally
+  // interchangeable (WO-022) for everything that DOES apply to both.
+  | 'NETWORK_ERROR';
 
 interface CloudAdapterErrorJSON {
   name: string;
@@ -165,10 +171,21 @@ export class ComputeError extends CloudAdapterError {
   }
 }
 
-/** Thrown by a provider stub (e.g. GCP/Azure before WO-021) for any operation it doesn't yet implement. */
+/** Thrown by a provider stub (e.g. GCP/Azure, WO-021) for any operation it doesn't yet implement. */
 export class ProviderNotImplementedError extends CloudAdapterError {
-  public constructor(provider: string, operation: string) {
-    super(`${provider} does not implement ${operation}`, 'NOT_IMPLEMENTED', provider, operation);
+  public constructor(
+    provider: string,
+    operation: string,
+    public readonly backingService?: string,
+  ) {
+    const backingServiceClause = backingService ? ` Expected backing service: ${backingService}.` : '';
+    super(
+      `${provider} does not implement ${operation} — this is a stub, not a working adapter.` +
+        `${backingServiceClause} See the TODO comments in this stub's source file for implementation guidance.`,
+      'NOT_IMPLEMENTED',
+      provider,
+      operation,
+    );
     this.name = 'ProviderNotImplementedError';
   }
 }

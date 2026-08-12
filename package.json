@@ -12,6 +12,7 @@
     "lint": "eslint \"src/**/*.ts\" --no-error-on-unmatched-pattern",
     "lint:fix": "eslint \"src/**/*.ts\" --fix --no-error-on-unmatched-pattern",
     "build": "tsc",
+    "start:worker": "node --max-old-space-size=2048 dist/workers/worker-entrypoint.js",
     "test:unit": "vitest run --config vitest.config.unit.ts",
     "test:integration": "vitest run --config vitest.config.integration.ts",
     "test:contract": "bash scripts/run-contract-tests.sh",
@@ -29,6 +30,7 @@
     "dev:gateway": "npm run build && node dist/gateway/server.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1107.0",
     "@aws-sdk/client-secrets-manager": "^3.1107.0",
     "@fastify/cookie": "^11.1.2",
     "@fastify/cors": "^10.1.0",
@@ -36,9 +38,11 @@
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "bcryptjs": "^2.4.3",
+    "bullmq": "^6.1.0",
     "dotenv": "^17.4.2",
     "fastify": "^5.11.3",
     "fastify-type-provider-zod": "^4.0.2",
+    "ioredis": "^6.0.0",
     "js-yaml": "^5.2.3",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.9.2",
