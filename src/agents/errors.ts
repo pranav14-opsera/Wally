@@ -28,12 +28,15 @@ export class InvalidStateTransitionError extends Error {
     public readonly from: JobStatus,
     public readonly to: JobStatus,
     validTransitions: readonly JobStatus[],
+    /** Overrides the generated message — for call sites with a stricter precondition than the general state machine (e.g. BaseAgent.resume() requires "paused" specifically, even though the machine also allows other states to transition to "running"). */
+    reasonOverride?: string,
   ) {
     super(
-      `Invalid job status transition: "${from}" -> "${to}". ` +
-        (validTransitions.length > 0
-          ? `Valid transitions from "${from}": ${validTransitions.join(', ')}.`
-          : `"${from}" is a terminal state — no further transitions are valid.`),
+      reasonOverride ??
+        `Invalid job status transition: "${from}" -> "${to}". ` +
+          (validTransitions.length > 0
+            ? `Valid transitions from "${from}": ${validTransitions.join(', ')}.`
+            : `"${from}" is a terminal state — no further transitions are valid.`),
     );
     this.name = 'InvalidStateTransitionError';
   }
@@ -44,5 +47,35 @@ export class DuplicateStepNameError extends Error {
   public constructor(public readonly stepName: string) {
     super(`defineSteps() returned duplicate step name "${stepName}" — step names must be unique within an agent.`);
     this.name = 'DuplicateStepNameError';
+  }
+}
+
+/** Thrown when a step's result can't be JSON-serialized for the memoization cache (WO-031) — a circular reference (caught via JSON.stringify's own error) or a function value anywhere in the result (JSON.stringify would otherwise silently drop it instead of erroring, which is worse: silent data loss on resume). */
+export class StepSerializationError extends Error {
+  public constructor(
+    public readonly jobId: string,
+    public readonly stepOrder: number,
+    public readonly cause: unknown,
+  ) {
+    super(
+      `Step result at index ${stepOrder} for job ${jobId} could not be serialized for caching: ` +
+        (cause instanceof Error ? cause.message : String(cause)),
+    );
+    this.name = 'StepSerializationError';
+  }
+}
+
+/** Thrown when the cache backend's atomic checkpoint transaction (result + checkpoint pointer) is aborted or a queued command within it fails — per this WO's constraint, a step is never considered "checkpointed" unless both commit together. Not named after any specific provider (agent code stays provider-agnostic, per the zero-hardcoding rule) even though the concrete adapter behind `IRedisClient` happens to be Redis today. */
+export class TransactionFailedError extends Error {
+  public constructor(
+    public readonly jobId: string,
+    public readonly stepOrder: number,
+    public readonly cause?: unknown,
+  ) {
+    super(
+      `Checkpoint transaction failed while caching step ${stepOrder} for job ${jobId}` +
+        (cause instanceof Error ? `: ${cause.message}` : cause !== undefined ? `: ${String(cause)}` : ' (transaction aborted).'),
+    );
+    this.name = 'TransactionFailedError';
   }
 }
