@@ -1,4 +1,4 @@
-export interface IBaseAgent {
+export interface AgentStepDefinition<TContext> {
   readonly name: string;
-  run(): Promise<void>;
+  run(context: TContext): Promise<void>;
 }

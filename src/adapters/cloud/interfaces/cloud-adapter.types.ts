@@ -72,7 +72,15 @@ export type CloudErrorCode =
   | 'K6_NOT_FOUND'
   | 'TASK_NOT_FOUND'
   | 'TASK_TIMEOUT'
-  | 'TASK_FAILED';
+  | 'TASK_FAILED'
+  // AWS-adapter-specific codes (WO-019) — distinct from the generic
+  // PROVIDER_ERROR fallback because callers need to distinguish "the AWS
+  // credential chain has nothing to offer" (a boot-time misconfiguration,
+  // same spirit as MASTER_KEY_MISSING for the local adapter) and "AWS is
+  // asking us to slow down" (transient, worth a backoff-and-retry) from
+  // "AWS Secrets Manager itself returned an unclassified failure".
+  | 'CONFIGURATION_ERROR'
+  | 'RATE_LIMITED';
 
 interface CloudAdapterErrorJSON {
   name: string;

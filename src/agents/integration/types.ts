@@ -1,5 +1,3 @@
-import type { IBaseAgent } from '../base/index.js';
-
-export interface IIntegrationAgent extends IBaseAgent {
+export interface IIntegrationAgent {
   readonly agentType: 'integration';
 }

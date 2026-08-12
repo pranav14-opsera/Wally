@@ -1,5 +1,3 @@
-import type { IBaseAgent } from '../base/index.js';
-
-export interface IValidationAgent extends IBaseAgent {
+export interface IValidationAgent {
   readonly agentType: 'validation';
 }

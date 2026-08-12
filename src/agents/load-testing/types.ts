@@ -1,5 +1,3 @@
-import type { IBaseAgent } from '../base/index.js';
-
-export interface ILoadTestingAgent extends IBaseAgent {
+export interface ILoadTestingAgent {
   readonly agentType: 'load-testing';
 }

@@ -1,5 +1,3 @@
-import type { IBaseAgent } from '../base/index.js';
-
-export interface IApiLifecycleAgent extends IBaseAgent {
+export interface IApiLifecycleAgent {
   readonly agentType: 'api-lifecycle';
 }

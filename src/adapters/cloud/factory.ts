@@ -5,6 +5,7 @@ import { getConfig } from '../../config/index.js';
 import type { CloudProvider, ComputeRunner } from '../../config/schema.js';
 import { createLogger } from '../../logging/index.js';
 import { AdapterNotRegisteredError } from '../errors.js';
+import { SecretsManagerAdapter } from './aws/SecretsManagerAdapter.js';
 import type { ICloudComputeService, ICloudSecretsService, ICloudStorageService } from './interfaces/index.js';
 import { FilesystemStorageAdapter } from './local/FilesystemStorageAdapter.js';
 import { LocalComputeRunner } from './local/LocalComputeRunner.js';
@@ -51,6 +52,19 @@ export const cloudSecretsRegistry = new AdapterRegistry<ICloudSecretsService>('c
 cloudSecretsRegistry.register(
   'local',
   () => new LocalSecretsAdapter(getConfig().SECRETS_LOCAL_PATH, 'LOCAL_SECRETS_MASTER_KEY', createLogger('LocalSecretsAdapter')),
+);
+// Real implementation (WO-019) — the AWS-production counterpart to
+// LocalSecretsAdapter above. No client is passed here: SecretsManagerAdapter's
+// own constructor defaults to `new SecretsManagerClient({})`, letting the
+// AWS SDK's default provider chain resolve region/credentials itself.
+cloudSecretsRegistry.register(
+  'aws',
+  () =>
+    new SecretsManagerAdapter(
+      getConfig().SECRETS_NAMESPACE,
+      getConfig().SECRETS_FORCE_DELETE_WITHOUT_RECOVERY,
+      createLogger('SecretsManagerAdapter'),
+    ),
 );
 
 export const cloudComputeRegistry = new AdapterRegistry<ICloudComputeService>('cloud compute');
