@@ -30,6 +30,12 @@ export {
   createCloudStorageAdapter,
 } from './factory.js';
 export { S3StorageAdapter } from './aws/S3StorageAdapter.js';
+export { AzureComputeStub } from './azure/AzureComputeStub.js';
+export { AzureSecretsStub } from './azure/AzureSecretsStub.js';
+export { AzureStorageStub } from './azure/AzureStorageStub.js';
+export { GcpComputeStub } from './gcp/GcpComputeStub.js';
+export { GcpSecretsStub } from './gcp/GcpSecretsStub.js';
+export { GcpStorageStub } from './gcp/GcpStorageStub.js';
 export { FilesystemStorageAdapter } from './local/FilesystemStorageAdapter.js';
 export { LocalComputeRunner } from './local/LocalComputeRunner.js';
 export { LocalSecretsAdapter } from './local/LocalSecretsAdapter.js';

@@ -168,10 +168,21 @@ export class ComputeError extends CloudAdapterError {
   }
 }
 
-/** Thrown by a provider stub (e.g. GCP/Azure before WO-021) for any operation it doesn't yet implement. */
+/** Thrown by a provider stub (e.g. GCP/Azure, WO-021) for any operation it doesn't yet implement. */
 export class ProviderNotImplementedError extends CloudAdapterError {
-  public constructor(provider: string, operation: string) {
-    super(`${provider} does not implement ${operation}`, 'NOT_IMPLEMENTED', provider, operation);
+  public constructor(
+    provider: string,
+    operation: string,
+    public readonly backingService?: string,
+  ) {
+    const backingServiceClause = backingService ? ` Expected backing service: ${backingService}.` : '';
+    super(
+      `${provider} does not implement ${operation} — this is a stub, not a working adapter.` +
+        `${backingServiceClause} See the TODO comments in this stub's source file for implementation guidance.`,
+      'NOT_IMPLEMENTED',
+      provider,
+      operation,
+    );
     this.name = 'ProviderNotImplementedError';
   }
 }
