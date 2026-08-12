@@ -117,6 +117,15 @@ const baseEnvSchema = z.object({
   // Step results larger than this still cache successfully but log a
   // warning (WO-031 edge case). Default 1,000,000 bytes (~1MB).
   MEMOIZATION_LARGE_RESULT_WARN_BYTES: z.coerce.number().int().positive().default(1_000_000),
+
+  // Worker process (WO-032). Concurrency and the DLQ-routing retry count
+  // reuse QUEUE_CONCURRENCY/QUEUE_JOB_ATTEMPTS above rather than
+  // duplicating them — those fields were added in WO-030 specifically
+  // "for a later WO's Worker to apply".
+  WORKER_LOCK_DURATION_MS: z.coerce.number().int().positive().default(60_000),
+  WORKER_STALLED_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
+  WORKER_DRAIN_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  WORKER_HEALTH_PORT: z.coerce.number().int().positive().max(65_535).default(9_090),
 });
 
 function requireField(
