@@ -7,11 +7,19 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 
 import {
   AdapterRegistry,
+  AzureComputeStub,
+  AzureSecretsStub,
+  AzureStorageStub,
+  cloudSecretsRegistry,
   cloudStorageRegistry,
+  createCloudAdapters,
   createCloudComputeAdapter,
   createCloudSecretsAdapter,
   createCloudStorageAdapter,
   FilesystemStorageAdapter,
+  GcpComputeStub,
+  GcpSecretsStub,
+  GcpStorageStub,
   LocalComputeRunner,
   LocalSecretsAdapter,
   S3StorageAdapter,
@@ -75,17 +83,126 @@ describe('cloud adapter factories', () => {
     expect(createCloudStorageAdapter('aws')).toBeInstanceOf(S3StorageAdapter);
   });
 
-  it('throws AdapterNotRegisteredError with the requested value and available list for an unregistered provider', () => {
+  it("createCloudStorageAdapter('gcp'/'azure') returns the corresponding stub (WO-021)", () => {
+    expect(createCloudStorageAdapter('gcp')).toBeInstanceOf(GcpStorageStub);
+    expect(createCloudStorageAdapter('azure')).toBeInstanceOf(AzureStorageStub);
+  });
+
+  it("createCloudSecretsAdapter('gcp'/'azure') returns the corresponding stub (WO-021)", () => {
+    expect(createCloudSecretsAdapter('gcp')).toBeInstanceOf(GcpSecretsStub);
+    expect(createCloudSecretsAdapter('azure')).toBeInstanceOf(AzureSecretsStub);
+  });
+
+  it("createCloudComputeAdapter('gcp'/'azure') returns the corresponding stub (WO-021)", () => {
+    expect(createCloudComputeAdapter('gcp')).toBeInstanceOf(GcpComputeStub);
+    expect(createCloudComputeAdapter('azure')).toBeInstanceOf(AzureComputeStub);
+  });
+
+  it('throws AdapterNotRegisteredError with the requested value and available list for a truly unregistered provider', () => {
+    // 'aws' secrets/compute are deliberately unregistered until
+    // WO-019/WO-020 land (see factory.ts's comments on those registries) —
+    // a real, already-designed-for gap, not a bug this test should hide.
     let thrown: Error | undefined;
     try {
-      createCloudStorageAdapter('gcp');
+      cloudSecretsRegistry.resolve('aws');
     } catch (error) {
       thrown = error as Error;
     }
 
     expect(thrown).toBeInstanceOf(AdapterNotRegisteredError);
-    expect(thrown?.message).toContain('gcp');
+    expect(thrown?.message).toContain('aws');
     expect(thrown?.message).toContain('local');
+  });
+
+  describe('createCloudAdapters', () => {
+    it("CLOUD_PROVIDER=local returns FilesystemStorageAdapter, LocalSecretsAdapter, and LocalComputeRunner", () => {
+      const adapters = createCloudAdapters({ cloudProvider: 'local', computeRunner: 'local' });
+
+      expect(adapters.storage).toBeInstanceOf(FilesystemStorageAdapter);
+      expect(adapters.secrets).toBeInstanceOf(LocalSecretsAdapter);
+      expect(adapters.compute).toBeInstanceOf(LocalComputeRunner);
+    });
+
+    it('CLOUD_PROVIDER=aws throws AdapterNotRegisteredError resolving secrets — SecretsManagerAdapter (WO-019) not yet registered', () => {
+      // storage/compute resolve fine for 'aws' (S3StorageAdapter exists;
+      // COMPUTE_RUNNER=local overrides compute to LocalComputeRunner
+      // regardless) — it's specifically the secrets slot that has no
+      // registered 'aws' entry yet, so createCloudAdapters() as a whole
+      // throws while building the returned object.
+      expect(() => createCloudAdapters({ cloudProvider: 'aws', computeRunner: 'local' })).toThrow(
+        AdapterNotRegisteredError,
+      );
+    });
+
+    it('CLOUD_PROVIDER=gcp returns all three GCP stubs', () => {
+      const adapters = createCloudAdapters({ cloudProvider: 'gcp', computeRunner: 'local' });
+      expect(adapters.storage).toBeInstanceOf(GcpStorageStub);
+      expect(adapters.compute).toBeInstanceOf(LocalComputeRunner);
+    });
+
+    it('CLOUD_PROVIDER=gcp with COMPUTE_RUNNER=cloud returns GcpComputeStub for compute', () => {
+      const adapters = createCloudAdapters({ cloudProvider: 'gcp', computeRunner: 'cloud' });
+      expect(adapters.compute).toBeInstanceOf(GcpComputeStub);
+    });
+
+    it('CLOUD_PROVIDER=azure with COMPUTE_RUNNER=cloud returns AzureComputeStub for compute', () => {
+      const adapters = createCloudAdapters({ cloudProvider: 'azure', computeRunner: 'cloud' });
+      expect(adapters.compute).toBeInstanceOf(AzureComputeStub);
+    });
+
+    it('an unrecognized CLOUD_PROVIDER throws a descriptive error listing valid options', () => {
+      expect(() =>
+        createCloudAdapters({ cloudProvider: 'openstack' as unknown as 'local', computeRunner: 'local' }),
+      ).toThrow(/Invalid CLOUD_PROVIDER.*openstack.*local.*aws.*gcp.*azure/s);
+    });
+
+    it('an empty-string CLOUD_PROVIDER is treated as invalid, not silently defaulted', () => {
+      expect(() => createCloudAdapters({ cloudProvider: '' as unknown as 'local', computeRunner: 'local' })).toThrow(
+        /Invalid CLOUD_PROVIDER/,
+      );
+    });
+
+    it('COMPUTE_RUNNER=local always selects LocalComputeRunner regardless of CLOUD_PROVIDER', () => {
+      // 'aws' is excluded here: its secrets slot isn't registered yet
+      // (WO-019), so createCloudAdapters('aws') throws before compute
+      // selection can even be observed — that gap is asserted on its own
+      // above. The compute-override rule itself is provider-agnostic and
+      // is fully exercised by the other three providers.
+      for (const cloudProvider of ['local', 'gcp', 'azure'] as const) {
+        const adapters = createCloudAdapters({ cloudProvider, computeRunner: 'local' });
+        expect(adapters.compute).toBeInstanceOf(LocalComputeRunner);
+      }
+    });
+
+    it('COMPUTE_RUNNER=cloud with CLOUD_PROVIDER=local throws a descriptive CONFIGURATION_ERROR', () => {
+      expect(() => createCloudAdapters({ cloudProvider: 'local', computeRunner: 'cloud' })).toThrow(
+        /COMPUTE_RUNNER=cloud requires a cloud CLOUD_PROVIDER/,
+      );
+    });
+
+    it('called multiple times, returns new instances each time (no singleton leakage)', () => {
+      const first = createCloudAdapters({ cloudProvider: 'local', computeRunner: 'local' });
+      const second = createCloudAdapters({ cloudProvider: 'local', computeRunner: 'local' });
+
+      expect(first.storage).not.toBe(second.storage);
+      expect(first.secrets).not.toBe(second.secrets);
+      expect(first.compute).not.toBe(second.compute);
+    });
+
+    it('falls back to getConfig() (CLOUD_PROVIDER=local, COMPUTE_RUNNER=local from the test env) when called with no arguments', () => {
+      const adapters = createCloudAdapters();
+      expect(adapters.storage).toBeInstanceOf(FilesystemStorageAdapter);
+      expect(adapters.compute).toBeInstanceOf(LocalComputeRunner);
+    });
+
+    it('a partial override merges with getConfig() for the omitted field', () => {
+      // Only cloudProvider is overridden; computeRunner falls back to the
+      // test env's COMPUTE_RUNNER=local — this exercises the `config?.x ?? appConfig.X`
+      // merge logic in createCloudAdapters, not just the "no args at all" path above.
+      const adapters = createCloudAdapters({ cloudProvider: 'gcp' });
+      expect(adapters.storage).toBeInstanceOf(GcpStorageStub);
+      expect(adapters.compute).toBeInstanceOf(LocalComputeRunner);
+    });
   });
 });
 

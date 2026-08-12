@@ -185,12 +185,14 @@ describe('bootstrap', () => {
     expect(container.config.CLOUD_PROVIDER).toBe('local');
   });
 
-  it('fails with adapter-registration context when config selects a valid but unregistered provider', async () => {
-    // CLOUD_PROVIDER=gcp passes config validation (it's a valid enum
-    // value) but has no registered cloud storage adapter yet (only
-    // local/aws are registered as of WO-018) — this is the "partial
-    // initialization failure" edge case: cloudStorage is the first
-    // adapter bootstrap resolves, so it must fail there specifically.
+  it('resolves all three adapters via their stub implementations when config selects CLOUD_PROVIDER=gcp (WO-021/WO-022)', async () => {
+    // CLOUD_PROVIDER=gcp passes config validation and now has all three
+    // cloud adapters registered (GcpStorageStub/GcpSecretsStub/
+    // GcpComputeStub, WO-021) — bootstrap() itself only *constructs* the
+    // adapters and calls their optional `init()` hooks, neither of which
+    // any stub method touches, so bootstrap succeeds even though every
+    // other method on these adapters throws ProviderNotImplementedError
+    // if actually called later.
     process.env = {
       ...ORIGINAL_ENV,
       ...VALID_ENV,
@@ -198,7 +200,10 @@ describe('bootstrap', () => {
     };
     const { bootstrap } = await import('../../../src/bootstrap.js');
 
-    await expect(bootstrap()).rejects.toThrow(/No cloud storage adapter registered for "gcp"/);
+    const container = await bootstrap();
+
+    expect(container.cloudStorage.constructor.name).toBe('GcpStorageStub');
+    expect(container.cloudSecrets.constructor.name).toBe('GcpSecretsStub');
   });
 
   it('with CLOUD_PROVIDER=aws, cloudStorage resolves (S3StorageAdapter) but bootstrap still fails at the next unregistered step (cloudSecrets — AWS support lands in WO-019)', async () => {
