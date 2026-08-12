@@ -20,11 +20,13 @@ export {
   SecretsError,
   StorageError,
 } from './interfaces/index.js';
+export type { CloudAdapterConfig, CloudAdapters } from './factory.js';
 export {
   AdapterRegistry,
   cloudComputeRegistry,
   cloudSecretsRegistry,
   cloudStorageRegistry,
+  createCloudAdapters,
   createCloudComputeAdapter,
   createCloudSecretsAdapter,
   createCloudStorageAdapter,
