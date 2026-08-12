@@ -229,13 +229,22 @@ describe('ToolRegistry schema', () => {
 });
 
 describe('MetricRegistry schema', () => {
-  it('requires name, description, source_query, and thresholds', async () => {
+  it('requires name, source_query, and thresholds', async () => {
     const MetricRegistryModel = mongoose.model('SchemaTest_MetricRegistry', metricRegistrySchema);
     const errors = await validationErrorsOf(new MetricRegistryModel({}));
     expect(errors?.name).toBeDefined();
-    expect(errors?.description).toBeDefined();
     expect(errors?.source_query).toBeDefined();
     expect(errors?.thresholds).toBeDefined();
+  });
+
+  // description is optional (WO-024) — omitting it must not produce a
+  // validation error, unlike the required fields above.
+  it('does not require description', async () => {
+    const MetricRegistryModel = mongoose.model('SchemaTest_MetricRegistryNoDescription', metricRegistrySchema);
+    const errors = await validationErrorsOf(
+      new MetricRegistryModel({ name: 'x', source_query: 'SELECT 1', thresholds: {} }),
+    );
+    expect(errors?.description).toBeUndefined();
   });
 
   it('declares a unique index on name', () => {
